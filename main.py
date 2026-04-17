@@ -10,18 +10,63 @@ import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 import pandas as pd
 import os
+import sys
 import re
 import json
 import webbrowser
 import glob
 import time
 import threading
+import urllib.request
 from collections import defaultdict
 
 GSHEET_URL = 'https://docs.google.com/spreadsheets/d/1boZBRpjPzvtjh2LM1K7f9aQT6kz5fLMBfEiSJ_rZaEc/export?format=xlsx&gid=661112978'
 DOWNLOAD_FOLDER = os.path.expanduser('~/Downloads')
 
 HAPPO_COLOR = 'FF66CCFF'
+
+# 업데이트 관련 설정
+GITHUB_REPO = 'wonderkjh10-cell/auto_run'
+UPDATE_CHECK_URL = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
+
+def _resource_path(relative_path):
+    """PyInstaller 실행 시에도 동작하는 리소스 경로 반환"""
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+def get_current_version():
+    """현재 프로그램 버전 읽기"""
+    try:
+        with open(_resource_path('version.txt'), 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except Exception:
+        return '0.0.0'
+
+def check_for_update():
+    """GitHub에서 최신 버전 확인. (최신버전, 다운로드URL) 또는 None 반환."""
+    try:
+        req = urllib.request.Request(
+            UPDATE_CHECK_URL,
+            headers={'Accept': 'application/vnd.github.v3+json'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+        latest_version = data.get('tag_name', '').lstrip('v')
+        current = get_current_version()
+        if latest_version and latest_version != current:
+            # 다운로드 URL 찾기
+            download_url = None
+            for asset in data.get('assets', []):
+                if asset['name'].endswith('.exe'):
+                    download_url = asset['browser_download_url']
+                    break
+            return (latest_version, download_url)
+    except Exception:
+        pass
+    return None
 
 MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mapping.json')
 
@@ -505,7 +550,8 @@ def save_sheets(result_sheets, headers, order_file_path, save_dir=None):
 class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('발주서 처리 프로그램')
+        current_ver = get_current_version()
+        self.title(f'발주서 처리 프로그램 v{current_ver}')
         self.geometry('720x600')
         self.resizable(False, False)
         self.configure(bg='#f5f5f5')
@@ -521,6 +567,33 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         self.mapping_entries = []
 
         self.show_step1()
+
+        # 백그라운드에서 업데이트 체크 (1초 후 실행)
+        self.after(1000, self._check_update_async)
+
+    def _check_update_async(self):
+        """백그라운드 스레드에서 업데이트 체크"""
+        def _worker():
+            result = check_for_update()
+            if result:
+                latest, download_url = result
+                self.after(0, lambda: self._show_update_dialog(latest, download_url))
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _show_update_dialog(self, latest_version, download_url):
+        """업데이트 알림 다이얼로그"""
+        current = get_current_version()
+        msg = (
+            f"새 버전이 출시되었습니다!\n\n"
+            f"  · 현재 버전: v{current}\n"
+            f"  · 최신 버전: v{latest_version}\n\n"
+            f"지금 다운로드 페이지를 여시겠습니까?"
+        )
+        if messagebox.askyesno('업데이트 알림', msg):
+            if download_url:
+                webbrowser.open(download_url)
+            else:
+                webbrowser.open(f'https://github.com/{GITHUB_REPO}/releases/latest')
 
     def _enable_drop(self, widget, var):
         """Entry 위젯에 드래그 앤 드롭 지원 추가"""
