@@ -39,10 +39,6 @@ jobs:
         run: |
           pyinstaller --onefile --windowed --name "order_processor" --add-data "version.txt;." main.py
 
-      - name: exe 파일명 한글로 변경
-        shell: cmd
-        run: python -c "import os; os.rename('dist/order_processor.exe', 'dist/\ubc1c\uc8fc\uc11c\ucc98\ub9ac\ud504\ub85c\uadf8\ub7a8.exe')"
-
       - name: Release 생성 및 exe 업로드
         uses: softprops/action-gh-release@v2
         with:
@@ -53,8 +49,8 @@ jobs:
 
             자동 빌드된 실행파일입니다.
 
-            **[발주서처리프로그램.exe 다운로드](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/발주서처리프로그램.exe)**
-          files: dist/*.exe
+            **[order_processor.exe 다운로드](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/order_processor.exe)**
+          files: dist/order_processor.exe
           draft: false
           prerelease: false
         env:
