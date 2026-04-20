@@ -471,7 +471,7 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                 th = total_happo_qty.get(code, 0)
                 remaining = avail - (tn + th + total_overseas_qty.get(code, 0) + total_damaged_qty.get(code, 0))
                 original = row['values'][name_col] or ''
-                new_values[name_col] = f"{original}\n★★★      [해외] {o}   0   {remaining}"
+                new_values[name_col] = f"{original}\n★★★      [해외] {o}   0   {remaining}      ★★★"
                 seen_overseas.add(code)
             elif code and row['damaged'] and code not in seen_damaged:
                 # 훼손: 별개 제품 취급, 훼손수량  0  잔여재고
@@ -481,7 +481,7 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                 th = total_happo_qty.get(code, 0)
                 remaining = avail - (tn + th + total_overseas_qty.get(code, 0) + total_damaged_qty.get(code, 0))
                 original = row['values'][name_col] or ''
-                new_values[name_col] = f"{original}\n★★★      [훼손] {d}   0   {remaining}"
+                new_values[name_col] = f"{original}\n★★★      [훼손] {d}   0   {remaining}      ★★★"
                 seen_damaged.add(code)
             elif code and not row['overseas'] and not row['damaged']:
                 n = normal_qty.get(code, 0)
@@ -496,17 +496,17 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                     seen_happo.add(code)
                     if n == 0:
                         # 합포만 있는 경우: 0  합포수량  잔여재고 (합포 행에 표시)
-                        new_values[name_col] = f"{original}\n★★★      0   {h}   {remaining}"
+                        new_values[name_col] = f"{original}\n★★★      0   {h}   {remaining}      ★★★"
                         seen_normal.add(code)
                     # 일반도 있는 경우: 합포 행에는 표기 안 함 (일반 행에서 표시)
                 elif not row['happo'] and code not in seen_normal:
                     seen_normal.add(code)
                     if h == 0:
                         # 일반만 있는 경우: 일반수량  0  잔여재고
-                        new_values[name_col] = f"{original}\n★★★      {n}   0   {remaining}"
+                        new_values[name_col] = f"{original}\n★★★      {n}   0   {remaining}      ★★★"
                     else:
                         # 일반+합포 있는 경우: (일반+합포)  합포수량  잔여재고 (일반 행에만 표시)
-                        new_values[name_col] = f"{original}\n★★★      {n + h}   {h}   {remaining}"
+                        new_values[name_col] = f"{original}\n★★★      {n + h}   {h}   {remaining}      ★★★"
 
             result_rows.append({'values': new_values, 'happo': row['happo']})
 
