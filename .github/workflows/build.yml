@@ -37,7 +37,12 @@ jobs:
 
       - name: PyInstaller로 exe 빌드
         run: |
-          pyinstaller --onefile --windowed --name "발주서처리프로그램" --add-data "version.txt;." main.py
+          pyinstaller --onefile --windowed --name "order_processor" --add-data "version.txt;." main.py
+
+      - name: exe 파일명 한글로 변경
+        shell: powershell
+        run: |
+          Rename-Item -Path "dist\order_processor.exe" -NewName "발주서처리프로그램.exe"
 
       - name: Release 생성 및 exe 업로드
         uses: softprops/action-gh-release@v2
