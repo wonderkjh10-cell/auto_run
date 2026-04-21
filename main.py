@@ -1335,7 +1335,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                 for cell in ws[2]:
                     cell.fill = header_fill
                     cell.font = header_font
-                    cell.alignment = Alignment(horizontal='center')
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
                     cell.border = thin_border
 
                 # 행3~: 데이터 (상품코드 기준 정렬)
@@ -1373,8 +1373,11 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                     for cell in ws[ws.max_row]:
                         cell.border = thin_border
                         cell.font = data_font
-                    # 행 높이 (A4 가로에 40행 기준)
-                    ws.row_dimensions[ws.max_row].height = 12
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                    # 상품명은 왼쪽 정렬
+                    ws.cell(ws.max_row, 2).alignment = Alignment(horizontal='left', vertical='center')
+                    # 행 높이
+                    ws.row_dimensions[ws.max_row].height = 16
 
                 # 행 높이 (헤더 포함)
                 ws.row_dimensions[1].height = 22
@@ -1387,13 +1390,15 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                 ws.column_dimensions['D'].width = 7
                 ws.column_dimensions['E'].width = 7
                 ws.column_dimensions['F'].width = 7
-                for i in range(len(other_sheets)):
+                for i, other_name in enumerate(other_sheets):
                     col_letter = openpyxl.utils.get_column_letter(7 + i)
-                    ws.column_dimensions[col_letter].width = 9
+                    # 회사명 길이 기준으로 열 너비 자동 조정 (최소 7, 최대 20)
+                    auto_width = max(7, min(20, len(other_name) * 2 + 2))
+                    ws.column_dimensions[col_letter].width = auto_width
 
                 # 인쇄 설정: A4 가로, 한 장에 약 40행
                 ws.page_setup.paperSize = ws.PAPERSIZE_A4  # A4
-                ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE  # 가로
+                ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT  # 세로
                 ws.page_setup.fitToWidth = 1  # 너비 1페이지
                 ws.page_setup.fitToHeight = 0  # 높이는 자동 (여러 페이지)
                 ws.sheet_properties.pageSetUpPr.fitToPage = True
