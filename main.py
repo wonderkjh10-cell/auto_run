@@ -590,10 +590,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             f"지금 다운로드 페이지를 여시겠습니까?"
         )
         if messagebox.askyesno('업데이트 알림', msg):
-            if download_url:
-                webbrowser.open(download_url)
-            else:
-                webbrowser.open(f'https://github.com/{GITHUB_REPO}/releases/latest')
+            webbrowser.open(f'https://github.com/{GITHUB_REPO}/releases/latest')
 
     def _enable_drop(self, widget, var):
         """Entry 위젯에 드래그 앤 드롭 지원 추가"""
