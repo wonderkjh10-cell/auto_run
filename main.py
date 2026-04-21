@@ -1307,9 +1307,9 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             ampm = '오전' if datetime.now().hour < 12 else '오후'
 
             header_fill = PatternFill(start_color='FF34495E', end_color='FF34495E', fill_type='solid')
-            header_font = Font(bold=True, color='FFFFFF', size=11)
-            title_font = Font(bold=True, size=13)
-            data_font = Font(size=10)
+            header_font = Font(bold=True, color='FFFFFF', size=12)
+            title_font = Font(bold=True, size=14)
+            data_font = Font(size=11)
             thin_border = Border(
                 left=Side(style='thin'),
                 right=Side(style='thin'),
@@ -1377,11 +1377,11 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                     # 상품명은 왼쪽 정렬
                     ws.cell(ws.max_row, 2).alignment = Alignment(horizontal='left', vertical='center')
                     # 행 높이
-                    ws.row_dimensions[ws.max_row].height = 16
+                    ws.row_dimensions[ws.max_row].height = 24
 
                 # 행 높이 (헤더 포함)
-                ws.row_dimensions[1].height = 22
-                ws.row_dimensions[2].height = 20
+                ws.row_dimensions[1].height = 28
+                ws.row_dimensions[2].height = 24
 
                 # 열 너비 조정
                 ws.column_dimensions['A'].width = 14
