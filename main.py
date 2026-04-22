@@ -57,13 +57,16 @@ def check_for_update():
         latest_version = data.get('tag_name', '').lstrip('v')
         current = get_current_version()
         if latest_version and latest_version != current:
-            # 다운로드 URL 찾기
+            # order_processor.exe 우선, 없으면 첫 번째 exe
             download_url = None
+            fallback_url = None
             for asset in data.get('assets', []):
-                if asset['name'].endswith('.exe'):
+                if asset['name'] == 'order_processor.exe':
                     download_url = asset['browser_download_url']
                     break
-            return (latest_version, download_url)
+                elif asset['name'].endswith('.exe') and fallback_url is None:
+                    fallback_url = asset['browser_download_url']
+            return (latest_version, download_url or fallback_url)
     except Exception:
         pass
     return None
@@ -583,18 +586,84 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
     def _show_update_dialog(self, latest_version, download_url):
         """업데이트 알림 다이얼로그"""
         current = get_current_version()
-        msg = (
-            f"새 버전이 출시되었습니다!\n\n"
-            f"  · 현재 버전: v{current}\n"
-            f"  · 최신 버전: v{latest_version}\n\n"
-            f"[다운로드 방법]\n"
-            f"  1. '예' 클릭 → 다운로드 페이지 열림\n"
-            f"  2. order_processor.exe 다운로드\n"
-            f"  3. 경고창 뜨면 '추가 정보' → '실행' 클릭\n"
-            f"  4. 또는 파일 우클릭 → 속성 → 차단 해제 체크\n\n"
-            f"다운로드 페이지를 여시겠습니까?"
-        )
-        if messagebox.askyesno('업데이트 알림', msg):
+        is_exe = getattr(sys, 'frozen', False)
+
+        if is_exe and download_url:
+            msg = (
+                f"새 버전이 출시되었습니다!\n\n"
+                f"  · 현재 버전: v{current}\n"
+                f"  · 최신 버전: v{latest_version}\n\n"
+                f"지금 자동 업데이트 하시겠습니까?\n"
+                f"(다운로드 후 프로그램이 자동 재시작됩니다)"
+            )
+            if messagebox.askyesno('업데이트 알림', msg):
+                self._do_auto_update(download_url)
+        else:
+            msg = (
+                f"새 버전이 출시되었습니다!\n\n"
+                f"  · 현재 버전: v{current}\n"
+                f"  · 최신 버전: v{latest_version}\n\n"
+                f"다운로드 페이지를 여시겠습니까?"
+            )
+            if messagebox.askyesno('업데이트 알림', msg):
+                webbrowser.open(f'https://github.com/{GITHUB_REPO}/releases/latest')
+
+    def _do_auto_update(self, download_url):
+        """자동 다운로드 → 파일 교체 → 재시작"""
+        import subprocess, tempfile
+
+        current_exe = sys.executable
+        tmp_path = current_exe + '.new'
+        bat_path = current_exe + '.update.bat'
+
+        # 진행 창
+        win = tk.Toplevel(self)
+        win.title('업데이트 중...')
+        win.geometry('320x90')
+        win.resizable(False, False)
+        win.grab_set()
+        lbl = tk.Label(win, text='새 버전 다운로드 중... 잠시만 기다려주세요.', font=('맑은 고딕', 10))
+        lbl.pack(pady=10)
+        bar = ttk.Progressbar(win, mode='indeterminate', length=280)
+        bar.pack()
+        bar.start()
+        win.update()
+
+        try:
+            # 다운로드
+            urllib.request.urlretrieve(download_url, tmp_path)
+
+            # MOTW(보안경고) 해제
+            subprocess.run(
+                ['powershell', '-Command', f'Unblock-File -Path "{tmp_path}"'],
+                capture_output=True
+            )
+
+            # 교체 + 재시작 배치 스크립트
+            pid = os.getpid()
+            bat = (
+                f'@echo off\n'
+                f':wait\n'
+                f'tasklist /fi "pid eq {pid}" 2>nul | find /i "{pid}" >nul\n'
+                f'if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)\n'
+                f'move /y "{tmp_path}" "{current_exe}"\n'
+                f'start "" "{current_exe}"\n'
+                f'del "%~f0"\n'
+            )
+            with open(bat_path, 'w', encoding='cp949') as f:
+                f.write(bat)
+
+            subprocess.Popen(
+                ['cmd', '/c', bat_path],
+                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+            )
+            win.destroy()
+            self.destroy()
+
+        except Exception as e:
+            win.destroy()
+            messagebox.showerror('업데이트 오류',
+                f'자동 업데이트 실패:\n{e}\n\n수동으로 다운로드하세요.')
             webbrowser.open(f'https://github.com/{GITHUB_REPO}/releases/latest')
 
     def _enable_drop(self, widget, var):
