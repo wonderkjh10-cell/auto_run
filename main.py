@@ -646,7 +646,9 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                 f':wait\n'
                 f'tasklist /fi "pid eq {pid}" 2>nul | find /i "{pid}" >nul\n'
                 f'if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)\n'
+                f':move_retry\n'
                 f'move /y "{tmp_path}" "{current_exe}"\n'
+                f'if errorlevel 1 (timeout /t 1 /nobreak >nul & goto move_retry)\n'
                 f'start "" "{current_exe}"\n'
                 f'del "%~f0"\n'
             )
@@ -1519,6 +1521,19 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             messagebox.showerror('출고리스트 오류', f'{e}\n\n{traceback.format_exc()}')
 
 
+def cleanup_update_files():
+    """업데이트 후 남은 임시 파일(.new, .update.bat) 자동 정리"""
+    if getattr(sys, 'frozen', False):
+        current_exe = sys.executable
+        for ext in ['.new', '.update.bat']:
+            leftover = current_exe + ext
+            try:
+                if os.path.exists(leftover):
+                    os.remove(leftover)
+            except Exception:
+                pass
+
 if __name__ == '__main__':
+    cleanup_update_files()
     app = App()
     app.mainloop()
