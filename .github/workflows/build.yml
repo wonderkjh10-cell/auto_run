@@ -47,9 +47,13 @@ jobs:
           body: |
             ## 발주서처리프로그램 ${{ steps.version.outputs.version }}
 
-            자동 빌드된 실행파일입니다.
-
             **[order_processor.exe 다운로드](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/order_processor.exe)**
+
+            ### 실행 방법
+            1. 위 링크 클릭하여 다운로드
+            2. 브라우저 경고 시 → `...` 클릭 → **유지** 선택
+            3. 파일 실행 시 파란 경고창 → **추가 정보** → **실행** 클릭
+            4. 또는 파일 우클릭 → **속성** → **차단 해제** 체크 후 실행
           files: dist/order_processor.exe
           draft: false
           prerelease: false

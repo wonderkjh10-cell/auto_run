@@ -587,7 +587,12 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             f"새 버전이 출시되었습니다!\n\n"
             f"  · 현재 버전: v{current}\n"
             f"  · 최신 버전: v{latest_version}\n\n"
-            f"지금 다운로드 페이지를 여시겠습니까?"
+            f"[다운로드 방법]\n"
+            f"  1. '예' 클릭 → 다운로드 페이지 열림\n"
+            f"  2. order_processor.exe 다운로드\n"
+            f"  3. 경고창 뜨면 '추가 정보' → '실행' 클릭\n"
+            f"  4. 또는 파일 우클릭 → 속성 → 차단 해제 체크\n\n"
+            f"다운로드 페이지를 여시겠습니까?"
         )
         if messagebox.askyesno('업데이트 알림', msg):
             webbrowser.open(f'https://github.com/{GITHUB_REPO}/releases/latest')
