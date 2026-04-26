@@ -209,7 +209,7 @@ def load_order_file(path):
     """엄격 모드: 첫 시트의 1행을 헤더로만 인식. 깨진 파일이면 오류."""
     # XML에서 합포 행 번호 미리 파싱
     happo_rows = _parse_happo_rows(path)
-    wb = openpyxl.load_workbook(path, read_only=True)
+    wb = openpyxl.load_workbook(path, data_only=True)  # read_only=True 시 <dimension> 버그로 사방넷 xlsx 1셀만 읽힘
     ws = wb.active
     rows = []
     headers = None
@@ -265,7 +265,7 @@ def recover_order_file(path):
     """깨진 발주서 파일에서 데이터 복구 시도.
     성공 시 복구된 파일 경로 반환. 실패 시 OrderFileError 발생.
     복구 파일은 원본과 같은 폴더에 '_복구됨' 접미사로 저장."""
-    wb = openpyxl.load_workbook(path, read_only=True)
+    wb = openpyxl.load_workbook(path, data_only=True)  # read_only=True 시 <dimension> 버그로 사방넷 xlsx 1셀만 읽힘
 
     target_ws = None
     header_row_idx = 1
