@@ -134,11 +134,15 @@ def is_damaged(values, headers):
 
 
 def _parse_happo_rows(path):
-    """xlsx를 직접 XML 파싱하여 합포(FF66CCFF) 행 번호 set 반환"""
+    """xlsx를 직접 XML 파싱하여 합포(FF66CCFF) 행 번호 set 및 번들 ID 매핑 반환.
+    번들 = 연속된 파란색 행 묶음 (같은 고객의 합포 주문)
+    반환: (happo_rows: set, row_to_bundle: dict{row_num: bundle_id})
+    """
     import zipfile
     import xml.etree.ElementTree as ET
     ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     happo_rows = set()
+    row_to_bundle = {}
     try:
         z = zipfile.ZipFile(path)
         # fills에서 합포색 인덱스 찾기
@@ -169,9 +173,20 @@ def _parse_happo_rows(path):
                 if style_idx in happo_styles:
                     happo_rows.add(row_num)
         z.close()
+        # 연속된 합포 행을 번들로 묶기 (같은 묶음 = 같은 번들 ID)
+        sorted_rows = sorted(happo_rows)
+        bundle_id = 0
+        if sorted_rows:
+            prev = sorted_rows[0]
+            row_to_bundle[prev] = bundle_id
+            for r in sorted_rows[1:]:
+                if r != prev + 1:
+                    bundle_id += 1
+                row_to_bundle[r] = bundle_id
+                prev = r
     except Exception:
         pass
-    return happo_rows
+    return happo_rows, row_to_bundle
 
 
 REQUIRED_ORDER_HEADERS = ['아이디', '수량', '상품코드', '사방넷 상품명', '배송메세지', '수집옵션명']
@@ -207,8 +222,8 @@ def _try_find_header_row(ws, max_scan=10):
 
 def load_order_file(path):
     """엄격 모드: 첫 시트의 1행을 헤더로만 인식. 깨진 파일이면 오류."""
-    # XML에서 합포 행 번호 미리 파싱
-    happo_rows = _parse_happo_rows(path)
+    # XML에서 합포 행 번호 및 번들 ID 미리 파싱
+    happo_rows, row_to_bundle = _parse_happo_rows(path)
     wb = openpyxl.load_workbook(path, read_only=True)
     ws = wb.active
     rows = []
@@ -254,6 +269,7 @@ def load_order_file(path):
         rows.append({
             'values': values,
             'happo': i in happo_rows,
+            'bundle_id': row_to_bundle.get(i),  # 합포 번들 ID (연속 파란색 묶음)
             'overseas': is_overseas(values, headers),
             'damaged': is_damaged(values, headers),
         })
@@ -418,6 +434,18 @@ def process_data(headers, rows, mapping, stock, location_map=None):
         row_id = str(row['values'][id_col]).strip() if row['values'][id_col] else '기타'
         sheet_name = mapping.get(row_id, row_id)
         sheets[sheet_name].append(row)
+
+    # 합포 재평가: 같은 회사에 같은 번들이 2개 이상인 경우만 합포로 처리
+    # (다른 회사와의 합포 묶음은 해당 회사 입장에서 일반으로 처리)
+    for sheet_rows in sheets.values():
+        bundle_counts = defaultdict(int)
+        for row in sheet_rows:
+            if row['happo'] and row.get('bundle_id') is not None:
+                bundle_counts[row['bundle_id']] += 1
+        for row in sheet_rows:
+            if row['happo'] and row.get('bundle_id') is not None:
+                if bundle_counts[row['bundle_id']] < 2:
+                    row['happo'] = False  # 같은 회사 내 1개뿐 → 실제 합포 아님
 
     result_sheets = {}
     for sheet_name, sheet_rows in sheets.items():
