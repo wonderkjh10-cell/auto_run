@@ -24,6 +24,13 @@ GSHEET_URL = 'https://docs.google.com/spreadsheets/d/1boZBRpjPzvtjh2LM1K7f9aQT6k
 DOWNLOAD_FOLDER = os.path.expanduser('~/Downloads')
 
 HAPPO_COLOR = 'FF66CCFF'
+HAPPO_COLOR_RGB6 = '66CCFF'  # 알파 제외 6자리 (사방넷 파일은 알파 없이 저장됨)
+
+def _is_happo_color(rgb_str):
+    """FF66CCFF / 66CCFF / 0066CCFF 등 알파 포함 여부 무관하게 합포색 판별"""
+    if not rgb_str:
+        return False
+    return rgb_str.upper().endswith(HAPPO_COLOR_RGB6)
 
 # 업데이트 관련 설정
 GITHUB_REPO = 'wonderkjh10-cell/auto_run'
@@ -107,7 +114,7 @@ def save_mapping_file(mapping):
 def is_happo(cell):
     try:
         if cell.fill and cell.fill.fgColor and cell.fill.fgColor.type == 'rgb':
-            return cell.fill.fgColor.rgb == HAPPO_COLOR
+            return _is_happo_color(cell.fill.fgColor.rgb)
     except Exception:
         pass
     return False
@@ -156,7 +163,7 @@ def _parse_happo_rows(path):
                 fills.append(fg.get('rgb') if fg is not None else None)
             else:
                 fills.append(None)
-        happo_fill_ids = {i for i, f in enumerate(fills) if f and f.upper() == HAPPO_COLOR}
+        happo_fill_ids = {i for i, f in enumerate(fills) if _is_happo_color(f)}
         # cellXfs에서 합포 스타일 인덱스 찾기
         happo_styles = set()
         for i, xf in enumerate(root.findall(f'.//{{{ns}}}cellXfs/{{{ns}}}xf')):
