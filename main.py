@@ -91,6 +91,7 @@ DEFAULT_MAPPING = {
     'ltd.circle': '템스윈',
     'ltd_circle@naver.com': '템스윈',
     'circle1': '템스윈',
+    'toss_biz_member_474075': '템스윈',
 }
 
 
@@ -867,7 +868,38 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         if path:
             var.set(path)
 
+    def _find_chrome_path(self):
+        """Chrome 실행 파일 경로 탐색. 없으면 None."""
+        import shutil
+        # 1) PATH에서 검색
+        found = shutil.which('chrome') or shutil.which('chrome.exe')
+        if found:
+            return found
+        # 2) Windows 일반 설치 경로
+        candidates = [
+            os.path.expandvars(r'%ProgramFiles%\Google\Chrome\Application\chrome.exe'),
+            os.path.expandvars(r'%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe'),
+            os.path.expandvars(r'%LocalAppData%\Google\Chrome\Application\chrome.exe'),
+        ]
+        for p in candidates:
+            if p and os.path.exists(p):
+                return p
+        return None
+
     def _download_gsheet(self):
+        chrome_path = self._find_chrome_path()
+        if not chrome_path:
+            msg = (
+                'Chrome 브라우저를 찾을 수 없습니다.\n\n'
+                '구글시트 다운로드는 Chrome의 로그인 세션을 사용합니다.\n'
+                'Chrome을 설치한 후 다시 시도해주세요.\n\n'
+                '[Chrome 다운로드 페이지를 여시겠습니까?]'
+            )
+            if messagebox.askyesno('Chrome 미설치', msg):
+                webbrowser.open('https://www.google.com/chrome/')
+            self.dl_status.config(text='Chrome 미설치로 다운로드 취소됨', fg='red')
+            return
+
         self.dl_status.config(text='Chrome에서 다운로드 중... 잠시 기다려주세요.', fg='#e67e22')
         self.update()
 
@@ -875,7 +907,13 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         before = set(glob.glob(os.path.join(DOWNLOAD_FOLDER, '*.xlsx')))
 
         # Chrome으로 다운로드 URL 열기 (로그인 세션 사용)
-        webbrowser.open(GSHEET_URL)
+        import subprocess
+        try:
+            subprocess.Popen([chrome_path, GSHEET_URL])
+        except Exception as e:
+            self.dl_status.config(text=f'Chrome 실행 실패: {e}', fg='red')
+            messagebox.showerror('Chrome 실행 오류', f'Chrome을 실행할 수 없습니다:\n{e}')
+            return
 
         # 백그라운드에서 파일 감지
         threading.Thread(target=self._wait_for_download, args=(before,), daemon=True).start()
