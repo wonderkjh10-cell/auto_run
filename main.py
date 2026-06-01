@@ -409,12 +409,14 @@ def process_data(headers, rows, mapping, stock, location_map=None):
     name_col = headers.index('사방넷 상품명')
 
     # ① 위치코드 먼저 사방넷 상품명 앞에 추가 (정렬 전)
+    # 위치정보 없는 상품은 '0' prefix로 일관 처리 (구글시트 약속: 위치없음 = '0')
     if location_map:
         for row in rows:
             code = str(row['values'][code_col]).strip() if row['values'][code_col] else None
-            if code and code in location_map:
+            if code:
                 original = str(row['values'][name_col] or '')
-                row['values'][name_col] = f"{location_map[code]} {original}"
+                loc = location_map.get(code, '0')
+                row['values'][name_col] = f"{loc} {original}"
 
     # 전체 상품코드별 총 수량 (모든 시트 합산, 유형별 집계)
     total_qty = defaultdict(int)
