@@ -517,7 +517,8 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                 # 잔여재고: 일반(합포 있으면 합포 제외) + 해외 + 훼손 차감
                 tn = total_normal_qty.get(code, 0)
                 th = total_happo_qty.get(code, 0)
-                remaining = avail - (tn + th + total_overseas_qty.get(code, 0) + total_damaged_qty.get(code, 0))
+                # 잔여재고: 훼손 제외 (훼손은 재고 차감 안 함)
+                remaining = avail - (tn + th + total_overseas_qty.get(code, 0))
                 original = row['values'][name_col] or ''
                 new_values[name_col] = f"{original}\n★★★ [{total_nho}]            [해외] {o}      0      {remaining}      ★★★"
                 seen_overseas.add(code)
@@ -527,7 +528,8 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                 avail = stock.get(code, 0)
                 tn = total_normal_qty.get(code, 0)
                 th = total_happo_qty.get(code, 0)
-                remaining = avail - (tn + th + total_overseas_qty.get(code, 0) + total_damaged_qty.get(code, 0))
+                # 잔여재고: 훼손 제외 (훼손은 재고 차감 안 함)
+                remaining = avail - (tn + th + total_overseas_qty.get(code, 0))
                 original = row['values'][name_col] or ''
                 new_values[name_col] = f"{original}\n★★★ {total_blank}            [훼손] {d}      0      {remaining}      ★★★"
                 seen_damaged.add(code)
@@ -537,7 +539,8 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                 avail = stock.get(code, 0)
                 tn = total_normal_qty.get(code, 0)
                 th = total_happo_qty.get(code, 0)
-                remaining = avail - (tn + th + total_overseas_qty.get(code, 0) + total_damaged_qty.get(code, 0))
+                # 잔여재고: 훼손 제외 (훼손은 재고 차감 안 함)
+                remaining = avail - (tn + th + total_overseas_qty.get(code, 0))
                 original = row['values'][name_col] or ''
 
                 if row['happo'] and code not in seen_happo:
@@ -556,7 +559,11 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                         # 일반+합포 있는 경우: (일반+합포)  합포수량  잔여재고 (일반 행에만 표시)
                         new_values[name_col] = f"{original}\n★★★ [{total_nho}]            {n + h}      {h}      {remaining}      ★★★"
 
-            result_rows.append({'values': new_values, 'happo': row['happo']})
+            result_rows.append({
+                'values': new_values,
+                'happo': row['happo'],
+                'damaged': row['damaged'],   # v1.1.7: 출고리스트에서 훼손 식별용
+            })
 
         result_sheets[sheet_name] = result_rows
 
@@ -1420,7 +1427,8 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
             sheet_names = list(self._result_sheets.keys())
 
-            # 거래처별 상품코드 집계: {sheet: {code: {name, location, normal, happo}}}
+            # 거래처별 상품코드 집계: {sheet: {code: {name, location, normal, happo, damaged}}}
+            # v1.1.7: damaged 별도 트래킹 (잔여재고 계산에서 훼손 제외 위해)
             sheet_data = {}
             for sheet_name, rows in self._result_sheets.items():
                 code_map = {}
@@ -1441,9 +1449,12 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                             'location': location,
                             'normal': 0,
                             'happo': 0,
+                            'damaged': 0,
                         }
                     if row['happo']:
                         code_map[code]['happo'] += qty
+                    elif row.get('damaged'):
+                        code_map[code]['damaged'] += qty
                     else:
                         code_map[code]['normal'] += qty
 
@@ -1496,15 +1507,16 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                 # 행3~: 데이터 (상품코드 기준 정렬)
                 for code in sorted(code_map.keys(), key=lambda c: code_map[c]['location']):
                     info = code_map[code]
-                    ship_qty = info['normal'] + info['happo']
+                    # 출고 = 일반+합포+훼손 (작업자 픽킹 총량)
+                    ship_qty = info['normal'] + info['happo'] + info['damaged']
                     happo_qty = info['happo']
                     avail = stock.get(code, 0)
-                    # 전체 거래처 출고수량 합산하여 잔여재고 계산
-                    total_ship = sum(
+                    # v1.1.7: 잔여재고 = 현재고 - (일반+합포) (훼손 제외)
+                    total_ship_no_damaged = sum(
                         sd.get(code, {}).get('normal', 0) + sd.get(code, {}).get('happo', 0)
                         for sd in sheet_data.values()
                     )
-                    remaining = avail - total_ship
+                    remaining = avail - total_ship_no_damaged
 
                     row_data = [
                         code,
@@ -1515,11 +1527,11 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                         remaining,
                     ]
 
-                    # 다른 거래처 출고수량
+                    # 다른 거래처 출고수량 (일반+합포+훼손)
                     for other in other_sheets:
                         other_info = sheet_data.get(other, {}).get(code)
                         if other_info:
-                            other_qty = other_info['normal'] + other_info['happo']
+                            other_qty = other_info['normal'] + other_info['happo'] + other_info['damaged']
                             row_data.append(other_qty if other_qty > 0 else '')
                         else:
                             row_data.append('')
