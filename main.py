@@ -507,6 +507,8 @@ def process_data(headers, rows, mapping, stock, location_map=None):
             total_nho = (total_normal_qty.get(code, 0)
                          + total_happo_qty.get(code, 0)
                          + total_overseas_qty.get(code, 0)) if code else 0
+            # 훼손 행은 [N] 자리를 같은 길이 공백으로 대체 (정렬 유지)
+            total_blank = ' ' * len(f"[{total_nho}]")
 
             if code and row['overseas'] and code not in seen_overseas:
                 # 해외배송: 별개 제품 취급, 해외수량  0  잔여재고
@@ -527,7 +529,7 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                 th = total_happo_qty.get(code, 0)
                 remaining = avail - (tn + th + total_overseas_qty.get(code, 0) + total_damaged_qty.get(code, 0))
                 original = row['values'][name_col] or ''
-                new_values[name_col] = f"{original}\n★★★ [{total_nho}]            [훼손] {d}      0      {remaining}      ★★★"
+                new_values[name_col] = f"{original}\n★★★ {total_blank}            [훼손] {d}      0      {remaining}      ★★★"
                 seen_damaged.add(code)
             elif code and not row['overseas'] and not row['damaged']:
                 n = normal_qty.get(code, 0)
