@@ -377,15 +377,37 @@ def recover_order_file(path):
 
 
 def load_location_file(path):
-    """위치 파일에서 상품코드 → 위치 매핑 반환"""
+    """위치 파일에서 상품코드 → 위치 매핑 반환
+    또한 수량별 포장 매핑(package_map) 반환: {code: {1: '보냉팩', 2: '보냉팩', ...}}
+    """
     df = pd.read_excel(path, sheet_name=0, header=0)
     location_map = {}
+    package_map = {}
+    # 수량별 포장 컬럼 (1개~12개). 일부는 끝에 공백이 포함될 수 있음
+    qty_col_names = []
+    for i in range(1, 13):
+        for candidate in (f'{i}개', f'{i}개 '):
+            if candidate in df.columns:
+                qty_col_names.append((i, candidate))
+                break
+
     for _, row in df.iterrows():
         code = str(row['상품코드']).strip() if pd.notna(row['상품코드']) else None
         loc  = str(row['위치']).strip()      if pd.notna(row['위치'])      else None
         if code and loc and code != 'nan' and loc != 'nan':
             location_map[code] = loc
-    return location_map
+        # 포장 정보 수집
+        if code and code != 'nan':
+            pkg = {}
+            for qty, col in qty_col_names:
+                val = row[col]
+                if pd.notna(val):
+                    s = str(val).strip()
+                    if s and s != 'nan':
+                        pkg[qty] = s
+            if pkg:
+                package_map[code] = pkg
+    return location_map, package_map
 
 
 def load_stock_file(path):
@@ -402,7 +424,7 @@ def load_stock_file(path):
     return stock
 
 
-def process_data(headers, rows, mapping, stock, location_map=None):
+def process_data(headers, rows, mapping, stock, location_map=None, package_map=None):
     id_col = headers.index('아이디')
     qty_col = headers.index('수량')
     code_col = headers.index('상품코드')
@@ -480,6 +502,8 @@ def process_data(headers, rows, mapping, stock, location_map=None):
         happo_qty = defaultdict(int)
         overseas_qty = defaultdict(int)
         damaged_qty = defaultdict(int)
+        # v1.2.0: 거래처 시트 단위로 상품별 별표 라인 width 추적 (포장 정보 정렬용)
+        code_star_w_local = {}
 
         for row in sheet_rows:
             code = str(row['values'][code_col]).strip() if row['values'][code_col] else None
@@ -558,6 +582,41 @@ def process_data(headers, rows, mapping, stock, location_map=None):
                     else:
                         # 일반+합포 있는 경우: (일반+합포)  합포수량  잔여재고 (일반 행에만 표시)
                         new_values[name_col] = f"{original}\n★★★ [{total_nho}]            {n + h}      {h}      {remaining}      ★★★"
+
+            # v1.2.0: 별표 라인 width 추적 (포장 정보 정렬용)
+            import unicodedata as _ud
+            def _vw(s):
+                w = 0
+                for c in s:
+                    e = _ud.east_asian_width(c)
+                    w += 2 if e in ('F', 'W', 'A') else 1
+                return w
+            if code:
+                cur_text = str(new_values[name_col] or '')
+                for line in cur_text.split('\n'):
+                    if '★★★' in line:
+                        w = _vw(line)
+                        if w > code_star_w_local.get(code, 0):
+                            code_star_w_local[code] = w
+                        break
+
+            # v1.2.0: 수량별 포장 정보 추가 (합포 행은 제외, 13개 이상도 제외)
+            # - 별표 라인이 있는 행: 별표 다음 줄에 포장
+            # - 별표 라인이 없는 행: 상품명 다음 줄에 포장 (같은 시트 내 별표 라인 width 기준 정렬)
+            if package_map and code and not row.get('happo'):
+                try:
+                    qty = int(row['values'][qty_col] or 0)
+                except (TypeError, ValueError):
+                    qty = 0
+                if 0 < qty <= 12:   # 13개 이상은 표시 안 함
+                    pkg = package_map.get(code, {}).get(qty)
+                    if pkg:
+                        current = new_values[name_col] or ''
+                        end_diamond = f"◇{pkg}◇"
+                        star_w = code_star_w_local.get(code, 50)
+                        start_w = _vw('◇')
+                        gap = max(1, star_w + 1 - start_w)
+                        new_values[name_col] = f"{current}\n◇{' ' * gap}{end_diamond}"
 
             result_rows.append({
                 'values': new_values,
@@ -1340,9 +1399,10 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             self.update()
 
             location_map = {}
+            package_map = {}
             if self.location_file.get():
                 try:
-                    location_map = load_location_file(self.location_file.get())
+                    location_map, package_map = load_location_file(self.location_file.get())
                 except Exception as e:
                     messagebox.showwarning('위치 파일 오류', f'위치 파일을 읽을 수 없습니다:\n{e}')
 
@@ -1357,7 +1417,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             self.update()
 
             result_sheets, headers = process_data(
-                self._headers, self._rows, self.mapping, stock, location_map)
+                self._headers, self._rows, self.mapping, stock, location_map, package_map)
 
             self.status_label.config(text='파일 저장 중...')
             self.progress['value'] = 75
@@ -1377,6 +1437,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             self._result_sheets = result_sheets
             self._stock = stock
             self._location_map = location_map
+            self._package_map = package_map
 
             folder = self.save_folder.get().strip() or os.path.dirname(self.order_file.get())
             btn_frame = tk.Frame(self, bg='#f5f5f5', pady=15)
