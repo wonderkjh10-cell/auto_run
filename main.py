@@ -612,11 +612,8 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                     pkg = package_map.get(code, {}).get(qty)
                     if pkg:
                         current = new_values[name_col] or ''
-                        end_diamond = f"◇{pkg}◇"
-                        star_w = code_star_w_local.get(code, 50)
-                        # 별표 끝 ★★★ 다음 칸부터 ◇포장◇ 시작
-                        pad = max(1, star_w + 1)
-                        new_values[name_col] = f"{current}\n{' ' * pad}{end_diamond}"
+                        # ◇포장◇만 셀 왼쪽에 표시 (padding 없음)
+                        new_values[name_col] = f"{current}\n◇{pkg}◇"
 
             result_rows.append({
                 'values': new_values,
