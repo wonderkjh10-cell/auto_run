@@ -86,6 +86,7 @@ DEFAULT_MAPPING = {
     'bh7555': '비에이치',
     'jjmall4817': '제이제이',
     'jjmall5031': '제이제이',
+    'LD479338': '제이제이',
     'ltdcircle': '템스윈',
     'circlecir': '템스윈',
     'ltd.circle': '템스윈',
@@ -96,11 +97,17 @@ DEFAULT_MAPPING = {
 
 
 def load_saved_mapping():
-    """저장된 매핑 파일 불러오기. 없으면 DEFAULT_MAPPING 반환"""
+    """저장된 매핑 파일 불러오기. 없으면 DEFAULT_MAPPING 반환.
+    저장된 파일이 있어도 DEFAULT_MAPPING의 신규 아이디는 자동 병합
+    (기존 값은 유지, 없는 키만 추가) → 새 거래처 아이디가 프로그램 업데이트로 자동 반영"""
     if os.path.exists(MAPPING_FILE):
         try:
             with open(MAPPING_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                saved = json.load(f)
+            for k, v in DEFAULT_MAPPING.items():
+                if k not in saved:
+                    saved[k] = v
+            return saved
         except Exception:
             pass
     return dict(DEFAULT_MAPPING)
