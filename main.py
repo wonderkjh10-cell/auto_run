@@ -1412,7 +1412,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                 if row['damaged']:
                     stats[sheet]['damaged'] += 1
 
-            tk.Label(frame, text='처리 후 생성될 파일 목록입니다.',
+            tk.Label(frame, text='통합 파일 1개가 생성됩니다. (거래처별 카운트는 참고용)',
                      font=('맑은 고딕', 10), bg='#f5f5f5', fg='#666').pack(anchor='w', pady=(0, 10))
 
             # Treeview 스타일
@@ -1440,7 +1440,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                                 style='Preview.Treeview',
                                 height=min(len(stats) + 1, 10))
 
-            tree.heading('file', text='저장 파일명', anchor='w')
+            tree.heading('file', text='거래처(송화인)', anchor='w')
             tree.heading('orders', text='주문', anchor='center')
             tree.heading('happo', text='합포', anchor='center')
             tree.heading('overseas', text='해외', anchor='center')
@@ -1464,10 +1464,9 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             total_overseas = 0
             total_damaged = 0
             for i, (sheet, s) in enumerate(stats.items()):
-                fname = f"{base}_{sheet}.xlsx"
                 tag = 'even' if i % 2 == 0 else 'odd'
                 tree.insert('', 'end', values=(
-                    fname, f"{s['rows']}건", f"{s['happo']}건",
+                    sheet, f"{s['rows']}건", f"{s['happo']}건",
                     f"{s['overseas']}건", f"{s['damaged']}건"
                 ), tags=(tag,))
                 total_rows += s['rows']
@@ -1483,7 +1482,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
             tree.pack(fill='x', pady=(0, 10))
 
-            tk.Label(frame, text=f'총 {total_rows}건  \u2192  {len(stats)}개 파일 생성',
+            tk.Label(frame, text=f'총 {total_rows}건  →  {base}_통합.xlsx  (1개 통합 파일)',
                      font=('맑은 고딕', 11, 'bold'), bg='#f5f5f5', fg='#27ae60').pack(anchor='w')
 
         except Exception as e:
