@@ -740,17 +740,13 @@ def save_integrated(result_sheets, headers, order_file_path, save_dir=None, comp
     # 헤더 (17열 + R~V 5열)
     extended = list(headers) + ['송화인', '송화인우편번호', '송화인주소1', '송화인주소2', '송화인전화번호']
     ws.append(extended)
+    # v1.4.2: 헤더 1행 전체를 오렌지 배경 + 흰색 글자로 통일
+    header_fill = PatternFill(start_color='FFD98C4A', end_color='FFD98C4A', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF')
     for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.alignment = Alignment(horizontal='center', wrap_text=True)
-
-    # R~V 헤더 강조 (오렌지 배경)
-    sender_fill = PatternFill(start_color='FFD98C4A', end_color='FFD98C4A', fill_type='solid')
-    sender_font = Font(bold=True, color='FFFFFF')
-    for c in range(18, 23):
-        cell = ws.cell(1, c)
-        cell.fill = sender_fill
-        cell.font = sender_font
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     # 정렬: 유형 + 상품명
     name_col = headers.index('사방넷 상품명')
