@@ -145,6 +145,33 @@ def save_mapping_file(mapping):
         json.dump(mapping, f, ensure_ascii=False, indent=2)
 
 
+# v1.4.0: 회사(송화인) 정보를 사용자 편집 가능하게 별도 파일로 관리
+COMPANY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'company.json')
+
+
+def load_company_info():
+    """저장된 회사 정보 파일 불러오기. 없으면 기본 COMPANY_INFO 사용.
+    저장 시 새로 추가된 기본 회사는 자동 병합 (없는 이름만 추가)."""
+    if os.path.exists(COMPANY_FILE):
+        try:
+            with open(COMPANY_FILE, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+            # DEFAULT COMPANY_INFO의 신규 회사 자동 병합
+            for name, info in COMPANY_INFO.items():
+                if name not in saved:
+                    saved[name] = info
+            return saved
+        except Exception:
+            pass
+    return dict(COMPANY_INFO)
+
+
+def save_company_info(company_dict):
+    """회사 정보를 JSON 파일로 저장"""
+    with open(COMPANY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(company_dict, f, ensure_ascii=False, indent=2)
+
+
 def is_happo(cell):
     try:
         if cell.fill and cell.fill.fgColor and cell.fill.fgColor.type == 'rgb':
@@ -693,7 +720,7 @@ def save_sheets(result_sheets, headers, order_file_path, save_dir=None):
     return saved
 
 
-def save_integrated(result_sheets, headers, order_file_path, save_dir=None):
+def save_integrated(result_sheets, headers, order_file_path, save_dir=None, company_info=None):
     """v1.3.0: 5개 회사 시트를 하나의 통합 xlsx로 저장.
     - 시트 분리 X (1개 파일)
     - R~V 컬럼에 송화인 정보 자동 입력 (COMPANY_INFO 활용)
@@ -762,7 +789,7 @@ def save_integrated(result_sheets, headers, order_file_path, save_dir=None):
 
     # 통합 시트에 쓰기
     for sheet_name, row in all_items:
-        info = COMPANY_INFO.get(sheet_name, {})
+        info = (company_info or COMPANY_INFO).get(sheet_name, {})
         values = list(row['values'])
         # R~V 확장
         values.append(sheet_name if info else '')
@@ -803,6 +830,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         self.stock_file = tk.StringVar()
         self.save_folder = tk.StringVar()
         self.mapping = load_saved_mapping()
+        self.company_info = load_company_info()   # v1.4.0: 회사(송화인) 마스터 정보
         self._headers = None
         self._rows = None
         self._detected_ids = []
@@ -1505,9 +1533,127 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         tk.Button(btn_frame, text='←  이전', command=self.show_step2,
                   font=('맑은 고딕', 11), padx=15, pady=7, relief='flat',
                   bg='#95a5a6', fg='white', cursor='hand2').pack(side='left')
+        tk.Button(btn_frame, text='회사정보 편집', command=self._open_company_editor,
+                  bg='#f39c12', fg='white', font=('맑은 고딕', 11),
+                  padx=15, pady=7, relief='flat', cursor='hand2').pack(side='left', padx=(10, 0))
         tk.Button(btn_frame, text='실행  ▶', command=self.show_step4,
                   bg='#e74c3c', fg='white', font=('맑은 고딕', 12, 'bold'),
                   padx=22, pady=9, relief='flat', cursor='hand2').pack(side='right')
+
+    def _open_company_editor(self):
+        """회사(송화인) 정보 편집 다이얼로그"""
+        win = tk.Toplevel(self)
+        win.title('회사(송화인) 정보 편집')
+        win.geometry('900x520')
+        win.transient(self)
+        win.grab_set()
+        win.configure(bg='#f5f5f5')
+
+        tk.Label(win, text='송화인 회사 정보 편집',
+                 font=('맑은 고딕', 13, 'bold'), bg='#f5f5f5', pady=10).pack()
+        tk.Label(win, text='통합 파일의 R~V 컬럼(송화인)에 자동 입력되는 정보입니다. 수정 후 [저장]을 누르세요.',
+                 font=('맑은 고딕', 9), bg='#f5f5f5', fg='#666').pack(pady=(0, 8))
+
+        # 헤더
+        hdr = tk.Frame(win, bg='#34495e')
+        hdr.pack(fill='x', padx=15)
+        for text, w in [('회사명', 16), ('우편번호', 8), ('주소1', 24), ('주소2', 20), ('전화번호', 14)]:
+            tk.Label(hdr, text=text, font=('맑은 고딕', 10, 'bold'),
+                     bg='#34495e', fg='white', width=w, anchor='w',
+                     padx=4, pady=5).pack(side='left')
+
+        # 스크롤 가능 리스트
+        outer = tk.Frame(win, bg='#f5f5f5')
+        outer.pack(fill='both', expand=True, padx=15)
+        canvas = tk.Canvas(outer, bg='#f5f5f5', highlightthickness=0, height=300)
+        scroll = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
+        inner = tk.Frame(canvas, bg='#f5f5f5')
+        inner.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.create_window((0, 0), window=inner, anchor='nw')
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side='left', fill='both', expand=True)
+        scroll.pack(side='right', fill='y')
+
+        # 마우스 휠 지원
+        def _wheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
+        canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
+        inner.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
+        inner.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
+
+        entries = []  # [(name_var, zip_var, addr1_var, addr2_var, phone_var, row_frame), ...]
+
+        def add_row(name='', zip_='', addr1='', addr2='', phone=''):
+            i = len(entries)
+            bg = '#ffffff' if i % 2 == 0 else '#f8f9fa'
+            row_f = tk.Frame(inner, bg=bg)
+            row_f.pack(fill='x')
+            name_v = tk.StringVar(value=name)
+            zip_v = tk.StringVar(value=zip_)
+            addr1_v = tk.StringVar(value=addr1)
+            addr2_v = tk.StringVar(value=addr2)
+            phone_v = tk.StringVar(value=phone)
+            tk.Entry(row_f, textvariable=name_v, font=('맑은 고딕', 10), width=16,
+                     relief='solid', bd=1).pack(side='left', padx=(0, 2), pady=3)
+            tk.Entry(row_f, textvariable=zip_v, font=('맑은 고딕', 10), width=8,
+                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
+            tk.Entry(row_f, textvariable=addr1_v, font=('맑은 고딕', 10), width=24,
+                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
+            tk.Entry(row_f, textvariable=addr2_v, font=('맑은 고딕', 10), width=20,
+                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
+            tk.Entry(row_f, textvariable=phone_v, font=('맑은 고딕', 10), width=14,
+                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
+            def remove():
+                row_f.destroy()
+                if (name_v, zip_v, addr1_v, addr2_v, phone_v, row_f) in entries:
+                    entries.remove((name_v, zip_v, addr1_v, addr2_v, phone_v, row_f))
+            tk.Button(row_f, text='X', command=remove,
+                      bg='#c0392b', fg='white', font=('맑은 고딕', 8),
+                      relief='flat', cursor='hand2', width=2).pack(side='left', padx=(4, 0))
+            entries.append((name_v, zip_v, addr1_v, addr2_v, phone_v, row_f))
+
+        # 기존 회사 정보 로드
+        for name, info in self.company_info.items():
+            add_row(name, info.get('zip', ''), info.get('addr1', ''),
+                    info.get('addr2', ''), info.get('phone', ''))
+
+        # 버튼
+        btn_f = tk.Frame(win, bg='#f5f5f5', pady=15)
+        btn_f.pack(fill='x', padx=15)
+
+        def add_new():
+            add_row()
+            canvas.update_idletasks()
+            canvas.yview_moveto(1.0)
+
+        def save_and_close():
+            new_info = {}
+            for name_v, zip_v, addr1_v, addr2_v, phone_v, _ in entries:
+                name = name_v.get().strip()
+                if not name:
+                    continue
+                new_info[name] = {
+                    'zip': zip_v.get().strip(),
+                    'addr1': addr1_v.get().strip(),
+                    'addr2': addr2_v.get().strip(),
+                    'phone': phone_v.get().strip(),
+                }
+            self.company_info = new_info
+            save_company_info(new_info)
+            messagebox.showinfo('저장 완료', f'회사 정보 {len(new_info)}건이 저장되었습니다.',
+                                parent=win)
+            win.destroy()
+
+        tk.Button(btn_f, text='+ 회사 추가', command=add_new,
+                  bg='#e67e22', fg='white', font=('맑은 고딕', 11),
+                  padx=15, pady=6, relief='flat', cursor='hand2').pack(side='left')
+        tk.Button(btn_f, text='저장', command=save_and_close,
+                  bg='#27ae60', fg='white', font=('맑은 고딕', 11, 'bold'),
+                  padx=22, pady=6, relief='flat', cursor='hand2').pack(side='right')
+        tk.Button(btn_f, text='취소', command=win.destroy,
+                  bg='#95a5a6', fg='white', font=('맑은 고딕', 11),
+                  padx=15, pady=6, relief='flat', cursor='hand2').pack(side='right', padx=(0, 8))
 
     # ─── STEP 4: 처리 실행 ───────────────────────────────────────────
     def show_step4(self):
@@ -1564,7 +1710,9 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
             save_dir = self.save_folder.get().strip() or os.path.dirname(self.order_file.get())
             # v1.3.0: 시트 분리 대신 통합 파일 1개 생성 (R~V 송화인 자동 입력)
-            saved = save_integrated(result_sheets, headers, self.order_file.get(), save_dir)
+            # v1.4.0: 사용자 편집한 회사 정보 전달
+            saved = save_integrated(result_sheets, headers, self.order_file.get(), save_dir,
+                                     company_info=self.company_info)
 
             self.progress['value'] = 100
             self.make_header(4, '처리 완료  ✓')
