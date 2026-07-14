@@ -80,30 +80,56 @@ def check_for_update():
 
 MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mapping.json')
 
+# v1.3.0: 송화인(거래처) 마스터 정보
+# CJ 업로드 양식의 R~V 컬럼(송화인/송화인우편번호/송화인주소1/송화인주소2/송화인전화번호)에
+# 각 주문의 아이디→회사명 매핑을 통해 자동 입력됨
+COMPANY_INFO = {
+    '*3pl물류':      {'zip': '11822', 'addr1': '경기도 의정부시 고산동 996-2',      'addr2': 'C동1009호 CJ회룡 3PL물류',        'phone': '02-6052-9162'},
+    '(주)아라올':    {'zip': '11647', 'addr1': '경기도 의정부시 호원동 226-112',    'addr2': '8층 CJ회룡 (주)아라올',           'phone': '010-8373-8814'},
+    '제이제이몰':    {'zip': '10245', 'addr1': '의정부시 호원동 226-77 3층 CJ회룡',  'addr2': '제이제이몰',                     'phone': '010-4842-9403'},
+    '국민 건강 마트': {'zip': '4167',  'addr1': '서울특별시 마포구 큰우물로 76',      'addr2': '4층 403호 내37호',               'phone': '010-7553-1981'},
+    '비에이치':      {'zip': '10073', 'addr1': '경기도 김포시 김포한강11로 288-31',  'addr2': '5층508호',                       'phone': '010-8114-2998'},
+}
+
+# v1.3.0: 시트명을 회사명(통합 문서1)으로 통일
 DEFAULT_MAPPING = {
-    'ncp_1owiht_01': '아라올',
-    'ehddk8080': '국민마트',
+    'ncp_1owiht_01': '(주)아라올',
+    'ehddk8080': '국민 건강 마트',
     'bh7555': '비에이치',
-    'jjmall4817': '제이제이',
-    'jjmall5031': '제이제이',
-    'LD479338': '제이제이',
-    'ltdcircle': '템스윈',
-    'circlecir': '템스윈',
-    'ltd.circle': '템스윈',
-    'ltd_circle@naver.com': '템스윈',
-    'circle1': '템스윈',
-    'toss_biz_member_474075': '템스윈',
+    'jjmall4817': '제이제이몰',
+    'jjmall5031': '제이제이몰',
+    'LD479338': '제이제이몰',
+    'ltdcircle': '*3pl물류',
+    'circlecir': '*3pl물류',
+    'ltd.circle': '*3pl물류',
+    'ltd_circle@naver.com': '*3pl물류',
+    'circle1': '*3pl물류',
+    'toss_biz_member_474075': '*3pl물류',
+}
+
+# v1.3.0: 기존 사용자의 mapping.json에 저장된 옛 시트명을 새 회사명으로 자동 변환
+SHEET_NAME_MIGRATION = {
+    '템스윈': '*3pl물류',
+    '제이제이': '제이제이몰',
+    '아라올': '(주)아라올',
+    '국민마트': '국민 건강 마트',
+    # '비에이치'는 동일하므로 마이그레이션 불필요
 }
 
 
 def load_saved_mapping():
     """저장된 매핑 파일 불러오기. 없으면 DEFAULT_MAPPING 반환.
-    저장된 파일이 있어도 DEFAULT_MAPPING의 신규 아이디는 자동 병합
-    (기존 값은 유지, 없는 키만 추가) → 새 거래처 아이디가 프로그램 업데이트로 자동 반영"""
+    - DEFAULT_MAPPING의 신규 아이디는 자동 병합 (기존 값 유지, 없는 키만 추가)
+    - 옛 시트명(템스윈/제이제이/아라올/국민마트)은 SHEET_NAME_MIGRATION으로 자동 변환 (v1.3.0)"""
     if os.path.exists(MAPPING_FILE):
         try:
             with open(MAPPING_FILE, 'r', encoding='utf-8') as f:
                 saved = json.load(f)
+            # 옛 시트명 → 새 회사명 마이그레이션
+            for k, v in list(saved.items()):
+                if v in SHEET_NAME_MIGRATION:
+                    saved[k] = SHEET_NAME_MIGRATION[v]
+            # DEFAULT_MAPPING의 신규 아이디 병합
             for k, v in DEFAULT_MAPPING.items():
                 if k not in saved:
                     saved[k] = v
@@ -287,6 +313,7 @@ def load_order_file(path):
             'bundle_id': row_to_bundle.get(i),  # 합포 번들 ID (연속 파란색 묶음)
             'overseas': is_overseas(values, headers),
             'damaged': is_damaged(values, headers),
+            'orig_idx': i,   # v1.3.0: 원본 발주서 행 번호 (통합 저장 시 순서 복원용)
         })
     wb.close()
     return headers, rows
@@ -626,6 +653,7 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                 'values': new_values,
                 'happo': row['happo'],
                 'damaged': row['damaged'],   # v1.1.7: 출고리스트에서 훼손 식별용
+                'orig_idx': row.get('orig_idx'),   # v1.3.0: 통합 저장 시 순서 복원용
             })
 
         result_sheets[sheet_name] = result_rows
@@ -663,6 +691,102 @@ def save_sheets(result_sheets, headers, order_file_path, save_dir=None):
         saved.append(out_path)
 
     return saved
+
+
+def save_integrated(result_sheets, headers, order_file_path, save_dir=None):
+    """v1.3.0: 5개 회사 시트를 하나의 통합 xlsx로 저장.
+    - 시트 분리 X (1개 파일)
+    - R~V 컬럼에 송화인 정보 자동 입력 (COMPANY_INFO 활용)
+    - 정렬: 유형(해외→훼손→합포→일반) + 사방넷 상품명 오름차순
+    - 상품코드별 별표 라인은 첫 등장 행에만 표시 (통합 후 중복 제거)
+    - 합포 행은 파란색 배경 유지
+    """
+    base_dir = save_dir if save_dir else os.path.dirname(order_file_path)
+    base_name = os.path.splitext(os.path.basename(order_file_path))[0]
+    out_path = os.path.join(base_dir, f"{base_name}_통합.xlsx")
+    happo_fill = PatternFill(start_color=HAPPO_COLOR, end_color=HAPPO_COLOR, fill_type='solid')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '통합'
+
+    # 헤더 (17열 + R~V 5열)
+    extended = list(headers) + ['송화인', '송화인우편번호', '송화인주소1', '송화인주소2', '송화인전화번호']
+    ws.append(extended)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal='center', wrap_text=True)
+
+    # R~V 헤더 강조 (오렌지 배경)
+    sender_fill = PatternFill(start_color='FFD98C4A', end_color='FFD98C4A', fill_type='solid')
+    sender_font = Font(bold=True, color='FFFFFF')
+    for c in range(18, 23):
+        cell = ws.cell(1, c)
+        cell.fill = sender_fill
+        cell.font = sender_font
+
+    # 정렬: 유형 + 상품명
+    name_col = headers.index('사방넷 상품명')
+    code_col = headers.index('상품코드')
+
+    def sort_type(row):
+        v = row['values']
+        if is_overseas(v, headers): return 0
+        if is_damaged(v, headers):  return 1
+        if row.get('happo'):        return 2
+        return 3
+
+    all_items = []
+    for sheet_name, srows in result_sheets.items():
+        for row in srows:
+            all_items.append((sheet_name, row))
+    all_items.sort(key=lambda x: (
+        sort_type(x[1]),
+        str(x[1]['values'][name_col] or '').split('\n')[0].strip()
+    ))
+
+    # 상품코드별로 별표 라인은 첫 등장 행에만 유지
+    seen_stars = set()
+    for sheet_name, row in all_items:
+        code = row['values'][code_col]
+        code = str(code).strip() if code else None
+        name_val = row['values'][name_col] or ''
+        if '★★★' not in str(name_val):
+            continue
+        if code and code in seen_stars:
+            lines = str(name_val).split('\n')
+            cleaned = [l for l in lines if '★★★' not in l]
+            row['values'][name_col] = '\n'.join(cleaned)
+        elif code:
+            seen_stars.add(code)
+
+    # 통합 시트에 쓰기
+    for sheet_name, row in all_items:
+        info = COMPANY_INFO.get(sheet_name, {})
+        values = list(row['values'])
+        # R~V 확장
+        values.append(sheet_name if info else '')
+        values.append(info.get('zip', ''))
+        values.append(info.get('addr1', ''))
+        values.append(info.get('addr2', ''))
+        values.append(info.get('phone', ''))
+        ws.append(values)
+        ws.row_dimensions[ws.max_row].height = 16.40
+        for cell in ws[ws.max_row]:
+            cell.alignment = Alignment(wrap_text=True)
+        if row.get('happo'):
+            for cell in ws[ws.max_row]:
+                cell.fill = happo_fill
+
+    # 열 너비
+    ws.column_dimensions['R'].width = 14
+    ws.column_dimensions['S'].width = 10
+    ws.column_dimensions['T'].width = 30
+    ws.column_dimensions['U'].width = 25
+    ws.column_dimensions['V'].width = 15
+
+    wb.save(out_path)
+    return [out_path]
 
 
 class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
@@ -1428,7 +1552,8 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             self.update()
 
             save_dir = self.save_folder.get().strip() or os.path.dirname(self.order_file.get())
-            saved = save_sheets(result_sheets, headers, self.order_file.get(), save_dir)
+            # v1.3.0: 시트 분리 대신 통합 파일 1개 생성 (R~V 송화인 자동 입력)
+            saved = save_integrated(result_sheets, headers, self.order_file.get(), save_dir)
 
             self.progress['value'] = 100
             self.make_header(4, '처리 완료  ✓')
