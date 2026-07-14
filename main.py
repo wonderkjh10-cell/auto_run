@@ -1518,17 +1518,76 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         tk.Label(win, text='통합 파일의 R~V 컬럼(송화인)에 자동 입력되는 정보입니다. 수정 후 [저장]을 누르세요.',
                  font=('맑은 고딕', 9), bg='#f5f5f5', fg='#666').pack(pady=(0, 8))
 
-        # v1.4.1: grid 레이아웃으로 헤더-필드 정렬 일치, 컬럼 폭 확대
-        # 컬럼 폭 (Entry width 기준)
-        COL_WIDTHS = [(18, '회사명'), (10, '우편번호'), (32, '주소1'), (28, '주소2'), (16, '전화번호')]
+        # v1.4.4: 주소1/주소2 폭을 슬라이더로 실시간 조정
+        # 총 폭 60 = 주소1 폭 + 주소2 폭 (합계 유지)
+        ADDR_TOTAL = 60
+        addr1_width = tk.IntVar(value=32)
+        addr2_width = tk.IntVar(value=28)
+
+        # 슬라이더 UI
+        slider_f = tk.Frame(win, bg='#f5f5f5')
+        slider_f.pack(fill='x', padx=20, pady=(0, 8))
+        tk.Label(slider_f, text='주소1/주소2 폭 조정:',
+                 font=('맑은 고딕', 9), bg='#f5f5f5', fg='#333').pack(side='left', padx=(0, 8))
+        addr1_lbl = tk.Label(slider_f, text=f'주소1: {addr1_width.get()}',
+                              font=('맑은 고딕', 9), bg='#f5f5f5', fg='#3498db', width=8)
+        addr1_lbl.pack(side='left')
+
+        # 슬라이더는 slider_container 안에 두고, 각 행의 위젯을 참조 리스트로 관리
+        addr1_entries = []
+        addr2_entries = []
+        addr1_header_lbl = None
+        addr2_header_lbl = None
+
+        def update_widths(val):
+            v = int(float(val))
+            v = max(15, min(50, v))
+            addr1_width.set(v)
+            addr2_width.set(ADDR_TOTAL - v)
+            addr1_lbl.config(text=f'주소1: {v}')
+            addr2_lbl.config(text=f'주소2: {ADDR_TOTAL - v}')
+            # 실제 Entry 위젯들 폭 변경
+            for e in addr1_entries:
+                e.config(width=v)
+            for e in addr2_entries:
+                e.config(width=ADDR_TOTAL - v)
+            # 헤더 라벨 폭도 변경
+            if addr1_header_lbl:
+                addr1_header_lbl.config(width=v)
+            if addr2_header_lbl:
+                addr2_header_lbl.config(width=ADDR_TOTAL - v)
+
+        slider = ttk.Scale(slider_f, from_=15, to=50, orient='horizontal',
+                            value=32, command=update_widths, length=280)
+        slider.pack(side='left', padx=8, fill='x', expand=True)
+        addr2_lbl = tk.Label(slider_f, text=f'주소2: {addr2_width.get()}',
+                              font=('맑은 고딕', 9), bg='#f5f5f5', fg='#3498db', width=8)
+        addr2_lbl.pack(side='left')
+
+        # 컬럼 폭 (initial)
+        COL_WIDTHS_STATIC = [(18, '회사명'), (10, '우편번호'), (16, '전화번호')]
 
         # 헤더
         hdr = tk.Frame(win, bg='#34495e')
         hdr.pack(fill='x', padx=20)
-        for i, (w, text) in enumerate(COL_WIDTHS):
-            tk.Label(hdr, text=text, font=('맑은 고딕', 10, 'bold'),
-                     bg='#34495e', fg='white', width=w, anchor='w',
-                     padx=6, pady=6).pack(side='left')
+        # 회사명, 우편번호
+        tk.Label(hdr, text='회사명', font=('맑은 고딕', 10, 'bold'),
+                 bg='#34495e', fg='white', width=18, anchor='w', padx=6, pady=6).pack(side='left')
+        tk.Label(hdr, text='우편번호', font=('맑은 고딕', 10, 'bold'),
+                 bg='#34495e', fg='white', width=10, anchor='w', padx=6, pady=6).pack(side='left')
+        # 주소1 (동적)
+        addr1_header_lbl = tk.Label(hdr, text='주소1', font=('맑은 고딕', 10, 'bold'),
+                                     bg='#34495e', fg='white', width=addr1_width.get(),
+                                     anchor='w', padx=6, pady=6)
+        addr1_header_lbl.pack(side='left')
+        # 주소2 (동적)
+        addr2_header_lbl = tk.Label(hdr, text='주소2', font=('맑은 고딕', 10, 'bold'),
+                                     bg='#34495e', fg='white', width=addr2_width.get(),
+                                     anchor='w', padx=6, pady=6)
+        addr2_header_lbl.pack(side='left')
+        # 전화번호
+        tk.Label(hdr, text='전화번호', font=('맑은 고딕', 10, 'bold'),
+                 bg='#34495e', fg='white', width=16, anchor='w', padx=6, pady=6).pack(side='left')
         # 삭제 버튼 자리
         tk.Label(hdr, text='', bg='#34495e', width=4).pack(side='left')
 
@@ -1556,23 +1615,38 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
         def add_row(name='', zip_='', addr1='', addr2='', phone=''):
             i = len(entries)
-            bg = '#ffffff' if i % 2 == 0 else '#eef5fb'   # v1.4.1: 대비 강한 색
-            row_f = tk.Frame(inner, bg=bg, pady=2)        # v1.4.1: 행 간격 (pady)
-            row_f.pack(fill='x', pady=(0, 2))             # v1.4.1: 행 사이 간격
+            bg = '#ffffff' if i % 2 == 0 else '#eef5fb'
+            row_f = tk.Frame(inner, bg=bg, pady=2)
+            row_f.pack(fill='x', pady=(0, 2))
             name_v = tk.StringVar(value=name)
             zip_v = tk.StringVar(value=zip_)
             addr1_v = tk.StringVar(value=addr1)
             addr2_v = tk.StringVar(value=addr2)
             phone_v = tk.StringVar(value=phone)
-            # v1.4.1: 각 필드 padx 6~8, width는 헤더와 동일하게
-            widths = [w for w, _ in COL_WIDTHS]
-            for var, width in [(name_v, widths[0]), (zip_v, widths[1]),
-                                (addr1_v, widths[2]), (addr2_v, widths[3]),
-                                (phone_v, widths[4])]:
-                tk.Entry(row_f, textvariable=var, font=('맑은 고딕', 10),
-                         width=width, relief='solid', bd=1).pack(
-                    side='left', padx=(0, 4), pady=4, ipady=2)
+            # 회사명
+            tk.Entry(row_f, textvariable=name_v, font=('맑은 고딕', 10),
+                     width=18, relief='solid', bd=1).pack(side='left', padx=(0, 4), pady=4, ipady=2)
+            # 우편번호
+            tk.Entry(row_f, textvariable=zip_v, font=('맑은 고딕', 10),
+                     width=10, relief='solid', bd=1).pack(side='left', padx=(0, 4), pady=4, ipady=2)
+            # 주소1 (동적 폭 — 슬라이더로 조정)
+            addr1_e = tk.Entry(row_f, textvariable=addr1_v, font=('맑은 고딕', 10),
+                                width=addr1_width.get(), relief='solid', bd=1)
+            addr1_e.pack(side='left', padx=(0, 4), pady=4, ipady=2)
+            addr1_entries.append(addr1_e)
+            # 주소2 (동적 폭)
+            addr2_e = tk.Entry(row_f, textvariable=addr2_v, font=('맑은 고딕', 10),
+                                width=addr2_width.get(), relief='solid', bd=1)
+            addr2_e.pack(side='left', padx=(0, 4), pady=4, ipady=2)
+            addr2_entries.append(addr2_e)
+            # 전화번호
+            tk.Entry(row_f, textvariable=phone_v, font=('맑은 고딕', 10),
+                     width=16, relief='solid', bd=1).pack(side='left', padx=(0, 4), pady=4, ipady=2)
             def remove():
+                if addr1_e in addr1_entries:
+                    addr1_entries.remove(addr1_e)
+                if addr2_e in addr2_entries:
+                    addr2_entries.remove(addr2_e)
                 row_f.destroy()
                 if (name_v, zip_v, addr1_v, addr2_v, phone_v, row_f) in entries:
                     entries.remove((name_v, zip_v, addr1_v, addr2_v, phone_v, row_f))
