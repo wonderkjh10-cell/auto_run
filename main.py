@@ -688,38 +688,6 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
     return result_sheets, headers
 
 
-def save_sheets(result_sheets, headers, order_file_path, save_dir=None):
-    base_dir = save_dir if save_dir else os.path.dirname(order_file_path)
-    base_name = os.path.splitext(os.path.basename(order_file_path))[0]
-    happo_fill = PatternFill(start_color=HAPPO_COLOR, end_color=HAPPO_COLOR, fill_type='solid')
-
-    saved = []
-    for sheet_name, rows in result_sheets.items():
-        out_path = os.path.join(base_dir, f"{base_name}_{sheet_name}.xlsx")
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = sheet_name
-
-        ws.append(headers)
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
-            cell.alignment = Alignment(horizontal='center')
-
-        for i, row in enumerate(rows, start=2):
-            ws.append(row['values'])
-            ws.row_dimensions[i].height = 16.40
-            for cell in ws[ws.max_row]:
-                cell.alignment = Alignment(wrap_text=True)
-            if row['happo']:
-                for cell in ws[ws.max_row]:
-                    cell.fill = happo_fill
-
-        wb.save(out_path)
-        saved.append(out_path)
-
-    return saved
-
-
 def save_integrated(result_sheets, headers, order_file_path, save_dir=None, company_info=None):
     """v1.3.0: 5개 회사 시트를 하나의 통합 xlsx로 저장.
     - 시트 분리 X (1개 파일)
