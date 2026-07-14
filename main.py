@@ -1541,10 +1541,10 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                   padx=22, pady=9, relief='flat', cursor='hand2').pack(side='right')
 
     def _open_company_editor(self):
-        """회사(송화인) 정보 편집 다이얼로그"""
+        """회사(송화인) 정보 편집 다이얼로그 (v1.4.1: 컬럼 폭/간격 확대)"""
         win = tk.Toplevel(self)
         win.title('회사(송화인) 정보 편집')
-        win.geometry('900x520')
+        win.geometry('1150x560')
         win.transient(self)
         win.grab_set()
         win.configure(bg='#f5f5f5')
@@ -1554,18 +1554,24 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         tk.Label(win, text='통합 파일의 R~V 컬럼(송화인)에 자동 입력되는 정보입니다. 수정 후 [저장]을 누르세요.',
                  font=('맑은 고딕', 9), bg='#f5f5f5', fg='#666').pack(pady=(0, 8))
 
+        # v1.4.1: grid 레이아웃으로 헤더-필드 정렬 일치, 컬럼 폭 확대
+        # 컬럼 폭 (Entry width 기준)
+        COL_WIDTHS = [(18, '회사명'), (10, '우편번호'), (32, '주소1'), (28, '주소2'), (16, '전화번호')]
+
         # 헤더
         hdr = tk.Frame(win, bg='#34495e')
-        hdr.pack(fill='x', padx=15)
-        for text, w in [('회사명', 16), ('우편번호', 8), ('주소1', 24), ('주소2', 20), ('전화번호', 14)]:
+        hdr.pack(fill='x', padx=20)
+        for i, (w, text) in enumerate(COL_WIDTHS):
             tk.Label(hdr, text=text, font=('맑은 고딕', 10, 'bold'),
                      bg='#34495e', fg='white', width=w, anchor='w',
-                     padx=4, pady=5).pack(side='left')
+                     padx=6, pady=6).pack(side='left')
+        # 삭제 버튼 자리
+        tk.Label(hdr, text='', bg='#34495e', width=4).pack(side='left')
 
         # 스크롤 가능 리스트
         outer = tk.Frame(win, bg='#f5f5f5')
-        outer.pack(fill='both', expand=True, padx=15)
-        canvas = tk.Canvas(outer, bg='#f5f5f5', highlightthickness=0, height=300)
+        outer.pack(fill='both', expand=True, padx=20, pady=(0, 5))
+        canvas = tk.Canvas(outer, bg='#f5f5f5', highlightthickness=0, height=330)
         scroll = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
         inner = tk.Frame(canvas, bg='#f5f5f5')
         inner.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
@@ -1582,35 +1588,33 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         inner.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _wheel))
         inner.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
 
-        entries = []  # [(name_var, zip_var, addr1_var, addr2_var, phone_var, row_frame), ...]
+        entries = []
 
         def add_row(name='', zip_='', addr1='', addr2='', phone=''):
             i = len(entries)
-            bg = '#ffffff' if i % 2 == 0 else '#f8f9fa'
-            row_f = tk.Frame(inner, bg=bg)
-            row_f.pack(fill='x')
+            bg = '#ffffff' if i % 2 == 0 else '#eef5fb'   # v1.4.1: 대비 강한 색
+            row_f = tk.Frame(inner, bg=bg, pady=2)        # v1.4.1: 행 간격 (pady)
+            row_f.pack(fill='x', pady=(0, 2))             # v1.4.1: 행 사이 간격
             name_v = tk.StringVar(value=name)
             zip_v = tk.StringVar(value=zip_)
             addr1_v = tk.StringVar(value=addr1)
             addr2_v = tk.StringVar(value=addr2)
             phone_v = tk.StringVar(value=phone)
-            tk.Entry(row_f, textvariable=name_v, font=('맑은 고딕', 10), width=16,
-                     relief='solid', bd=1).pack(side='left', padx=(0, 2), pady=3)
-            tk.Entry(row_f, textvariable=zip_v, font=('맑은 고딕', 10), width=8,
-                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
-            tk.Entry(row_f, textvariable=addr1_v, font=('맑은 고딕', 10), width=24,
-                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
-            tk.Entry(row_f, textvariable=addr2_v, font=('맑은 고딕', 10), width=20,
-                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
-            tk.Entry(row_f, textvariable=phone_v, font=('맑은 고딕', 10), width=14,
-                     relief='solid', bd=1).pack(side='left', padx=2, pady=3)
+            # v1.4.1: 각 필드 padx 6~8, width는 헤더와 동일하게
+            widths = [w for w, _ in COL_WIDTHS]
+            for var, width in [(name_v, widths[0]), (zip_v, widths[1]),
+                                (addr1_v, widths[2]), (addr2_v, widths[3]),
+                                (phone_v, widths[4])]:
+                tk.Entry(row_f, textvariable=var, font=('맑은 고딕', 10),
+                         width=width, relief='solid', bd=1).pack(
+                    side='left', padx=(0, 4), pady=4, ipady=2)
             def remove():
                 row_f.destroy()
                 if (name_v, zip_v, addr1_v, addr2_v, phone_v, row_f) in entries:
                     entries.remove((name_v, zip_v, addr1_v, addr2_v, phone_v, row_f))
-            tk.Button(row_f, text='X', command=remove,
-                      bg='#c0392b', fg='white', font=('맑은 고딕', 8),
-                      relief='flat', cursor='hand2', width=2).pack(side='left', padx=(4, 0))
+            tk.Button(row_f, text='✕', command=remove,
+                      bg='#c0392b', fg='white', font=('맑은 고딕', 9, 'bold'),
+                      relief='flat', cursor='hand2', width=3).pack(side='left', padx=(4, 4), pady=4)
             entries.append((name_v, zip_v, addr1_v, addr2_v, phone_v, row_f))
 
         # 기존 회사 정보 로드
