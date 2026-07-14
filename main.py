@@ -1284,6 +1284,18 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         canvas.pack(side='left', fill='both', expand=True)
         scroll.pack(side='right', fill='y')
 
+        # v1.3.3: 마우스 휠 스크롤 지원 (매핑 목록 위에 마우스가 있을 때만 활성)
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+        def _bind_wheel(event):
+            canvas.bind_all('<MouseWheel>', _on_mousewheel)
+        def _unbind_wheel(event):
+            canvas.unbind_all('<MouseWheel>')
+        canvas.bind('<Enter>', _bind_wheel)
+        canvas.bind('<Leave>', _unbind_wheel)
+        inner.bind('<Enter>', _bind_wheel)
+        inner.bind('<Leave>', _unbind_wheel)
+
         self.mapping_entries = []
         self._mapping_inner = inner
         self._mapping_canvas = canvas
