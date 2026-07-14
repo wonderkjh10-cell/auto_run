@@ -1674,105 +1674,115 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
             stock = self._stock
 
-            for idx, sheet_name in enumerate(sheet_names):
-                ws = wb.create_sheet(title=f'{sheet_name}출고리스트')
-                code_map = sheet_data.get(sheet_name, {})
-                other_sheets = [s for s in sheet_names if s != sheet_name]
+            # v1.3.2: 통합 출고리스트 (하나의 시트)
+            ws = wb.create_sheet(title='통합출고리스트')
 
-                # 행1: 날짜 + 오전/오후 + 거래처명
-                ws.append([today, f'{ampm} {sheet_name}'])
-                ws['A1'].font = title_font
-                ws['B1'].font = title_font
+            # 행1: 날짜 + 오전/오후
+            ws.append([today, f'{ampm} 통합 출고리스트'])
+            ws['A1'].font = title_font
+            ws['B1'].font = title_font
 
-                # 행2: 헤더
-                col_headers = ['상품코드', '상품명', '상품위치', '출고', '합포장', '재고'] + other_sheets
-                ws.append(col_headers)
-                for cell in ws[2]:
-                    cell.fill = header_fill
-                    cell.font = header_font
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
+            # 모든 상품코드 수집 (중복 제거)
+            all_codes = set()
+            for sd in sheet_data.values():
+                all_codes.update(sd.keys())
+
+            # 상품 정보 조회 (첫 등장 시트에서)
+            code_info = {}
+            for code in all_codes:
+                for sheet_name in sheet_names:
+                    if code in sheet_data.get(sheet_name, {}):
+                        info = sheet_data[sheet_name][code]
+                        code_info[code] = {'name': info['name'], 'location': info['location']}
+                        break
+
+            # 행2: 헤더 — 상품코드 | 상품명 | 상품위치 | 총출고 | 재고 | 회사별 5개
+            col_headers = ['상품코드', '상품명', '상품위치', '총출고', '재고'] + sheet_names
+            ws.append(col_headers)
+            for cell in ws[2]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = thin_border
+
+            # 행3~: 데이터 (상품위치 기준 정렬)
+            for code in sorted(all_codes, key=lambda c: code_info.get(c, {}).get('location', '0')):
+                info = code_info.get(code, {})
+                # 전체 회사 총 출고 (일반+합포+훼손)
+                total_ship = sum(
+                    sd.get(code, {}).get('normal', 0)
+                    + sd.get(code, {}).get('happo', 0)
+                    + sd.get(code, {}).get('damaged', 0)
+                    for sd in sheet_data.values()
+                )
+                avail = stock.get(code, 0)
+                # v1.1.7: 잔여재고 = 현재고 - (일반+합포) 합산 (훼손 제외)
+                total_ship_no_damaged = sum(
+                    sd.get(code, {}).get('normal', 0) + sd.get(code, {}).get('happo', 0)
+                    for sd in sheet_data.values()
+                )
+                remaining = avail - total_ship_no_damaged
+
+                row_data = [
+                    code,
+                    info.get('name', ''),
+                    info.get('location', ''),
+                    total_ship if total_ship > 0 else '',
+                    remaining,
+                ]
+
+                # 회사별 출고수량 (일반+합포+훼손)
+                for sheet_name in sheet_names:
+                    sd = sheet_data.get(sheet_name, {})
+                    if code in sd:
+                        c_info = sd[code]
+                        c_qty = c_info['normal'] + c_info['happo'] + c_info['damaged']
+                        row_data.append(c_qty if c_qty > 0 else '')
+                    else:
+                        row_data.append('')
+
+                ws.append(row_data)
+                for cell in ws[ws.max_row]:
                     cell.border = thin_border
+                    cell.font = data_font
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                # 상품명은 왼쪽 정렬
+                ws.cell(ws.max_row, 2).alignment = Alignment(horizontal='left', vertical='center')
+                ws.row_dimensions[ws.max_row].height = 24
 
-                # 행3~: 데이터 (상품코드 기준 정렬)
-                for code in sorted(code_map.keys(), key=lambda c: code_map[c]['location']):
-                    info = code_map[code]
-                    # 출고 = 일반+합포+훼손 (작업자 픽킹 총량)
-                    ship_qty = info['normal'] + info['happo'] + info['damaged']
-                    happo_qty = info['happo']
-                    avail = stock.get(code, 0)
-                    # v1.1.7: 잔여재고 = 현재고 - (일반+합포) (훼손 제외)
-                    total_ship_no_damaged = sum(
-                        sd.get(code, {}).get('normal', 0) + sd.get(code, {}).get('happo', 0)
-                        for sd in sheet_data.values()
-                    )
-                    remaining = avail - total_ship_no_damaged
+            # 행 높이 (헤더)
+            ws.row_dimensions[1].height = 28
+            ws.row_dimensions[2].height = 24
 
-                    row_data = [
-                        code,
-                        info['name'],
-                        info['location'],
-                        ship_qty if ship_qty > 0 else '',
-                        happo_qty if happo_qty > 0 else '',
-                        remaining,
-                    ]
+            # 열 너비
+            ws.column_dimensions['A'].width = 14
+            ws.column_dimensions['B'].width = 40
+            ws.column_dimensions['C'].width = 9
+            ws.column_dimensions['D'].width = 8
+            ws.column_dimensions['E'].width = 8
+            for i, sheet_name in enumerate(sheet_names):
+                col_letter = openpyxl.utils.get_column_letter(6 + i)
+                auto_width = max(8, min(20, len(sheet_name) * 2 + 2))
+                ws.column_dimensions[col_letter].width = auto_width
 
-                    # 다른 거래처 출고수량 (일반+합포+훼손)
-                    for other in other_sheets:
-                        other_info = sheet_data.get(other, {}).get(code)
-                        if other_info:
-                            other_qty = other_info['normal'] + other_info['happo'] + other_info['damaged']
-                            row_data.append(other_qty if other_qty > 0 else '')
-                        else:
-                            row_data.append('')
+            # 인쇄 설정: A4 세로, 한 장에 약 40행
+            ws.page_setup.paperSize = ws.PAPERSIZE_A4
+            ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToHeight = 0
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+            ws.page_margins.left = 0.3
+            ws.page_margins.right = 0.3
+            ws.page_margins.top = 0.3
+            ws.page_margins.bottom = 0.3
+            ws.page_margins.header = 0.15
+            ws.page_margins.footer = 0.15
+            ws.print_options.horizontalCentered = True
+            ws.print_title_rows = '1:2'
+            ws.oddFooter.center.text = '&P / &N'
 
-                    ws.append(row_data)
-                    for cell in ws[ws.max_row]:
-                        cell.border = thin_border
-                        cell.font = data_font
-                        cell.alignment = Alignment(horizontal='center', vertical='center')
-                    # 상품명은 왼쪽 정렬
-                    ws.cell(ws.max_row, 2).alignment = Alignment(horizontal='left', vertical='center')
-                    # 행 높이
-                    ws.row_dimensions[ws.max_row].height = 24
-
-                # 행 높이 (헤더 포함)
-                ws.row_dimensions[1].height = 28
-                ws.row_dimensions[2].height = 24
-
-                # 열 너비 조정
-                ws.column_dimensions['A'].width = 14
-                ws.column_dimensions['B'].width = 40
-                ws.column_dimensions['C'].width = 9
-                ws.column_dimensions['D'].width = 7
-                ws.column_dimensions['E'].width = 7
-                ws.column_dimensions['F'].width = 7
-                for i, other_name in enumerate(other_sheets):
-                    col_letter = openpyxl.utils.get_column_letter(7 + i)
-                    # 회사명 길이 기준으로 열 너비 자동 조정 (최소 7, 최대 20)
-                    auto_width = max(7, min(20, len(other_name) * 2 + 2))
-                    ws.column_dimensions[col_letter].width = auto_width
-
-                # 인쇄 설정: A4 가로, 한 장에 약 40행
-                ws.page_setup.paperSize = ws.PAPERSIZE_A4  # A4
-                ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT  # 세로
-                ws.page_setup.fitToWidth = 1  # 너비 1페이지
-                ws.page_setup.fitToHeight = 0  # 높이는 자동 (여러 페이지)
-                ws.sheet_properties.pageSetUpPr.fitToPage = True
-                # 여백 최소화 (단위: 인치)
-                ws.page_margins.left = 0.3
-                ws.page_margins.right = 0.3
-                ws.page_margins.top = 0.3
-                ws.page_margins.bottom = 0.3
-                ws.page_margins.header = 0.15
-                ws.page_margins.footer = 0.15
-                # 가운데 정렬 (가로)
-                ws.print_options.horizontalCentered = True
-                # 헤더(행1~2) 매 페이지 반복, 페이지 번호 표시
-                ws.print_title_rows = '1:2'
-                ws.oddFooter.center.text = '&P / &N'
-
-                self.progress['value'] = 50 + int(40 * (idx + 1) / len(sheet_names))
-                self.update()
+            self.progress['value'] = 90
+            self.update()
 
             # 저장
             save_dir = self.save_folder.get().strip() or os.path.dirname(self.order_file.get())
@@ -1784,9 +1794,10 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             self.make_header(5, '출고리스트 생성 완료  ✓')
             self.status_label.config(text='출고리스트가 생성되었습니다.', fg='#27ae60')
 
-            sheet_list = '\n'.join(f'  ✓  {s}출고리스트' for s in sheet_names)
+            company_list = '\n'.join(f'  ·  {s}' for s in sheet_names)
             self.result_label.config(
-                text=f'저장 파일: {os.path.basename(out_path)}\n\n시트 ({len(sheet_names)}개):\n{sheet_list}')
+                text=f'저장 파일: {os.path.basename(out_path)}\n\n'
+                     f'통합 출고리스트 (1개 시트, {len(sheet_names)}개 거래처 컬럼):\n{company_list}')
 
             folder = save_dir
             btn_frame = tk.Frame(self, bg='#f5f5f5', pady=15)
