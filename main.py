@@ -1931,6 +1931,12 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                 cell.alignment = Alignment(horizontal='center', vertical='center')
                 cell.border = thin_border
 
+            # v1.4.8: 총출고/회사별 자리에 "수량(합포수량)" 표시 (합포 있을 때만 괄호)
+            def _fmt_qty(qty, happo):
+                if qty <= 0:
+                    return ''
+                return f"{qty}({happo})" if happo > 0 else qty
+
             # 행3~: 데이터 (상품위치 기준 정렬)
             for code in sorted(all_codes, key=lambda c: code_info.get(c, {}).get('location', '0')):
                 info = code_info.get(code, {})
@@ -1939,6 +1945,11 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                     sd.get(code, {}).get('normal', 0)
                     + sd.get(code, {}).get('happo', 0)
                     + sd.get(code, {}).get('damaged', 0)
+                    for sd in sheet_data.values()
+                )
+                # 전체 회사 합포 총합 (총출고 뒤 괄호 표시용)
+                total_happo = sum(
+                    sd.get(code, {}).get('happo', 0)
                     for sd in sheet_data.values()
                 )
                 avail = stock.get(code, 0)
@@ -1953,17 +1964,17 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
                     code,
                     info.get('name', ''),
                     info.get('location', ''),
-                    total_ship if total_ship > 0 else '',
+                    _fmt_qty(total_ship, total_happo),
                     remaining,
                 ]
 
-                # 회사별 출고수량 (일반+합포+훼손)
+                # 회사별 출고수량 (일반+합포+훼손) — 합포 있으면 "수량(합포)" 표시
                 for sheet_name in sheet_names:
                     sd = sheet_data.get(sheet_name, {})
                     if code in sd:
                         c_info = sd[code]
                         c_qty = c_info['normal'] + c_info['happo'] + c_info['damaged']
-                        row_data.append(c_qty if c_qty > 0 else '')
+                        row_data.append(_fmt_qty(c_qty, c_info['happo']))
                     else:
                         row_data.append('')
 
