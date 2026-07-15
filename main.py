@@ -559,25 +559,8 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
             )
         )
 
-        normal_qty = defaultdict(int)
-        happo_qty = defaultdict(int)
-        overseas_qty = defaultdict(int)
-        damaged_qty = defaultdict(int)
         # v1.2.0: 거래처 시트 단위로 상품별 별표 라인 width 추적 (포장 정보 정렬용)
         code_star_w_local = {}
-
-        for row in sheet_rows:
-            code = str(row['values'][code_col]).strip() if row['values'][code_col] else None
-            qty = int(row['values'][qty_col] or 0)
-            if code:
-                if row['overseas']:
-                    overseas_qty[code] += qty
-                elif row['damaged']:
-                    damaged_qty[code] += qty
-                elif row['happo']:
-                    happo_qty[code] += qty
-                else:
-                    normal_qty[code] += qty
 
         seen_overseas = set()
         seen_damaged = set()
@@ -597,7 +580,8 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
 
             if code and row['overseas'] and code not in seen_overseas:
                 # 해외배송: 별개 제품 취급, 해외수량  0  잔여재고
-                o = overseas_qty.get(code, 0)
+                # v1.4.5: 통합 파일 기준 전체 회사 합산 값 사용 (거래처별 시트 시절 로컬 값 → 전역 값)
+                o = total_overseas_qty.get(code, 0)
                 avail = stock.get(code, 0)
                 # 잔여재고: 일반(합포 있으면 합포 제외) + 해외 + 훼손 차감
                 tn = total_normal_qty.get(code, 0)
@@ -609,7 +593,8 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                 seen_overseas.add(code)
             elif code and row['damaged'] and code not in seen_damaged:
                 # 훼손: 별개 제품 취급, 훼손수량  0  잔여재고
-                d = damaged_qty.get(code, 0)
+                # v1.4.5: 전체 회사 합산 훼손수량
+                d = total_damaged_qty.get(code, 0)
                 avail = stock.get(code, 0)
                 tn = total_normal_qty.get(code, 0)
                 th = total_happo_qty.get(code, 0)
@@ -619,8 +604,9 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                 new_values[name_col] = f"{original}\n★★★ {total_blank}            [훼손] {d}      0      {remaining}      ★★★"
                 seen_damaged.add(code)
             elif code and not row['overseas'] and not row['damaged']:
-                n = normal_qty.get(code, 0)
-                h = happo_qty.get(code, 0)
+                # v1.4.5: 전체 회사 합산 일반/합포수량 (통합 파일 별표 라인 일관성)
+                n = total_normal_qty.get(code, 0)
+                h = total_happo_qty.get(code, 0)
                 avail = stock.get(code, 0)
                 tn = total_normal_qty.get(code, 0)
                 th = total_happo_qty.get(code, 0)
@@ -736,20 +722,58 @@ def save_integrated(result_sheets, headers, order_file_path, save_dir=None, comp
         str(x[1]['values'][name_col] or '').split('\n')[0].strip()
     ))
 
-    # 상품코드별로 별표 라인은 첫 등장 행에만 유지
-    seen_stars = set()
+    # v1.4.6: 상품코드별 + 유형별 첫 등장 행에만 별표 라인 유지
+    # (해외+일반 혼합 케이스에서 유형별 별표를 각각 남겨 정보 손실 방지)
+    seen_stars = set()   # (code, type) 튜플
     for sheet_name, row in all_items:
         code = row['values'][code_col]
         code = str(code).strip() if code else None
         name_val = row['values'][name_col] or ''
         if '★★★' not in str(name_val):
             continue
-        if code and code in seen_stars:
+        v = row['values']
+        if is_overseas(v, headers):
+            star_type = 'overseas'
+        elif is_damaged(v, headers):
+            star_type = 'damaged'
+        else:
+            star_type = 'normal'   # 일반/합포/일반+합포 모두 여기
+        key = (code, star_type)
+        if code and key in seen_stars:
             lines = str(name_val).split('\n')
             cleaned = [l for l in lines if '★★★' not in l]
             row['values'][name_col] = '\n'.join(cleaned)
         elif code:
-            seen_stars.add(code)
+            seen_stars.add(key)
+
+    # v1.4.7: 위드유 합포 오판정 회피 — (수화주명, 주소) 조합이 서로 다른 회사(시트)에
+    # 걸친 충돌 케이스에 한해, 수화주명 뒤에 회사명 태그 부착.
+    # 위드유는 수화주명+주소로 합포 판정 → 회사 태그로 이름을 다르게 만들어 별개 처리 유도.
+    # 태그 내 회사명은 앞의 '*' 접두 제거 (예: '*3pl물류' → '(3pl물류)')
+    try:
+        recv_col = headers.index('수화주명')
+        addr_col = headers.index('주소')
+    except ValueError:
+        recv_col = addr_col = -1
+
+    if recv_col >= 0 and addr_col >= 0:
+        from collections import defaultdict as _dd
+        recv_addr_sheets = _dd(set)
+        for sheet_name, row in all_items:
+            v = row['values']
+            recv = str(v[recv_col] or '').strip()
+            addr = str(v[addr_col] or '').strip()
+            if recv and addr:
+                recv_addr_sheets[(recv, addr)].add(sheet_name)
+        conflict_keys = {k for k, s in recv_addr_sheets.items() if len(s) >= 2}
+
+        for sheet_name, row in all_items:
+            v = row['values']
+            recv = str(v[recv_col] or '').strip()
+            addr = str(v[addr_col] or '').strip()
+            if (recv, addr) in conflict_keys:
+                tag = sheet_name.lstrip('*')
+                row['values'][recv_col] = f"{recv}({tag})"
 
     # 통합 시트에 쓰기
     for sheet_name, row in all_items:
