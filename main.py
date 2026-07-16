@@ -501,26 +501,6 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                 loc = location_map.get(code, '0')
                 row['values'][name_col] = f"{loc} {original}"
 
-    # 전체 상품코드별 총 수량 (모든 시트 합산, 유형별 집계)
-    total_qty = defaultdict(int)
-    total_normal_qty = defaultdict(int)
-    total_happo_qty = defaultdict(int)
-    total_overseas_qty = defaultdict(int)
-    total_damaged_qty = defaultdict(int)
-    for row in rows:
-        code = str(row['values'][code_col]).strip() if row['values'][code_col] else None
-        qty = int(row['values'][qty_col] or 0)
-        if code:
-            total_qty[code] += qty
-            if row['overseas']:
-                total_overseas_qty[code] += qty
-            elif row['damaged']:
-                total_damaged_qty[code] += qty
-            elif row['happo']:
-                total_happo_qty[code] += qty
-            else:
-                total_normal_qty[code] += qty
-
     # 아이디별 시트 분리
     sheets = defaultdict(list)
     for row in rows:
@@ -539,6 +519,28 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
             if row['happo'] and row.get('bundle_id') is not None:
                 if bundle_counts[row['bundle_id']] < 2:
                     row['happo'] = False  # 같은 회사 내 1개뿐 → 실제 합포 아님
+
+    # v1.4.9: 전역 유형별 집계는 재평가 후로 이동
+    # (원본 파란색이어도 회사 다른 합포 묶음이 일반으로 강등되면 total_happo_qty에도 미포함)
+    # 별표 라인의 h 자리, 출고리스트 합포 병기 모두 실제 합포만 반영됨
+    total_qty = defaultdict(int)
+    total_normal_qty = defaultdict(int)
+    total_happo_qty = defaultdict(int)
+    total_overseas_qty = defaultdict(int)
+    total_damaged_qty = defaultdict(int)
+    for row in rows:
+        code = str(row['values'][code_col]).strip() if row['values'][code_col] else None
+        qty = int(row['values'][qty_col] or 0)
+        if code:
+            total_qty[code] += qty
+            if row['overseas']:
+                total_overseas_qty[code] += qty
+            elif row['damaged']:
+                total_damaged_qty[code] += qty
+            elif row['happo']:
+                total_happo_qty[code] += qty
+            else:
+                total_normal_qty[code] += qty
 
     result_sheets = {}
     for sheet_name, sheet_rows in sheets.items():
