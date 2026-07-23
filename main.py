@@ -440,10 +440,12 @@ def recover_order_file(path):
 def load_location_file(path):
     """위치 파일에서 상품코드 → 위치 매핑 반환
     또한 수량별 포장 매핑(package_map) 반환: {code: {1: '보냉팩', 2: '보냉팩', ...}}
+    v1.5.0: 특이사항 매핑(special_map) 반환: {code: '특이사항값'} — 수량 무관, 상품별 하나
     """
     df = pd.read_excel(path, sheet_name=0, header=0)
     location_map = {}
     package_map = {}
+    special_map = {}   # v1.5.0
     # 수량별 포장 컬럼 (1개~12개). 일부는 끝에 공백이 포함될 수 있음
     qty_col_names = []
     for i in range(1, 13):
@@ -451,6 +453,12 @@ def load_location_file(path):
             if candidate in df.columns:
                 qty_col_names.append((i, candidate))
                 break
+    # v1.5.0: 특이사항 컬럼 (앞뒤 공백 허용)
+    special_col = None
+    for candidate in ('특이사항', '특이사항 ', ' 특이사항'):
+        if candidate in df.columns:
+            special_col = candidate
+            break
 
     for _, row in df.iterrows():
         code = str(row['상품코드']).strip() if pd.notna(row['상품코드']) else None
@@ -468,7 +476,14 @@ def load_location_file(path):
                         pkg[qty] = s
             if pkg:
                 package_map[code] = pkg
-    return location_map, package_map
+            # v1.5.0: 특이사항 값 수집 (있으면 상품별 하나)
+            if special_col is not None:
+                sval = row[special_col]
+                if pd.notna(sval):
+                    s = str(sval).strip()
+                    if s and s != 'nan':
+                        special_map[code] = s
+    return location_map, package_map, special_map
 
 
 def load_stock_file(path):
@@ -485,7 +500,7 @@ def load_stock_file(path):
     return stock
 
 
-def process_data(headers, rows, mapping, stock, location_map=None, package_map=None):
+def process_data(headers, rows, mapping, stock, location_map=None, package_map=None, special_map=None):
     id_col = headers.index('아이디')
     qty_col = headers.index('수량')
     code_col = headers.index('상품코드')
@@ -649,20 +664,30 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                             code_star_w_local[code] = w
                         break
 
-            # v1.2.0: 수량별 포장 정보 추가 (합포 행은 제외, 13개 이상도 제외)
-            # - 별표 라인이 있는 행: 별표 다음 줄에 포장
-            # - 별표 라인이 없는 행: 상품명 다음 줄에 포장 (같은 시트 내 별표 라인 width 기준 정렬)
-            if package_map and code and not row.get('happo'):
+            # v1.2.0/v1.5.0: 수량별 포장 정보 + 특이사항 (합포 행은 제외)
+            # - 박스크기(package_map): 수량 1~12에서만 표시
+            # - 특이사항(special_map): 수량 무관, 상품별로 항상 표시
+            # - 조합 표시: ◇박스◇특이사항◇ (다이아 하나로 구분)
+            if code and not row.get('happo'):
                 try:
                     qty = int(row['values'][qty_col] or 0)
                 except (TypeError, ValueError):
                     qty = 0
-                if 0 < qty <= 12:   # 13개 이상은 표시 안 함
+                pkg = None
+                if package_map and 0 < qty <= 12:
                     pkg = package_map.get(code, {}).get(qty)
-                    if pkg:
-                        current = new_values[name_col] or ''
-                        # ◇포장◇만 셀 왼쪽에 표시 (padding 없음)
-                        new_values[name_col] = f"{current}\n◇{pkg}◇"
+                special = special_map.get(code) if special_map else None
+                if pkg and special:
+                    line = f"◇{pkg}◇{special}◇"
+                elif pkg:
+                    line = f"◇{pkg}◇"
+                elif special:
+                    line = f"◇{special}◇"
+                else:
+                    line = None
+                if line:
+                    current = new_values[name_col] or ''
+                    new_values[name_col] = f"{current}\n{line}"
 
             result_rows.append({
                 'values': new_values,
@@ -1753,9 +1778,10 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
             location_map = {}
             package_map = {}
+            special_map = {}   # v1.5.0
             if self.location_file.get():
                 try:
-                    location_map, package_map = load_location_file(self.location_file.get())
+                    location_map, package_map, special_map = load_location_file(self.location_file.get())
                 except Exception as e:
                     messagebox.showwarning('위치 파일 오류', f'위치 파일을 읽을 수 없습니다:\n{e}')
 
@@ -1770,7 +1796,8 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             self.update()
 
             result_sheets, headers = process_data(
-                self._headers, self._rows, self.mapping, stock, location_map, package_map)
+                self._headers, self._rows, self.mapping, stock,
+                location_map, package_map, special_map)
 
             self.status_label.config(text='파일 저장 중...')
             self.progress['value'] = 75
