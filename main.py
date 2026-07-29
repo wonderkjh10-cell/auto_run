@@ -500,6 +500,43 @@ def load_stock_file(path):
     return stock
 
 
+# ─────────────────────────────────────────────────────────────────
+# 별표 라인 고정폭 정렬 (v1.5.1)
+#   라벨(고정폭 폰트)에서 [N]·수량 자릿수가 바뀌어도 칼럼이 밀리지 않도록,
+#   고정 "공백 개수"가 아니라 고정 "칼럼 폭"으로 각 값을 패딩한다.
+#   폭 값은 기존 1자리 기준 간격(‘[3]’+12칸, ‘3’+6칸)을 그대로 보존 →
+#   대부분의 라벨은 이전과 바이트 동일, 2자리 이상에서만 밀림이 교정된다.
+_STAR_BRACKET_W = 15   # [N] 칼럼 폭 ('[3]' 3 + 12칸 = 15, 기존 1자리 유지)
+_STAR_VALUE_W = 7      # 각 수량 칼럼 폭 ('3' 1 + 6칸 = 7, 기존 1자리 유지)
+
+
+def _star_visual_width(s):
+    """문자열의 표시 폭(동아시아 전각 = 2). 라벨 고정폭 폰트 기준."""
+    import unicodedata as _ud
+    return sum(2 if _ud.east_asian_width(c) in ('F', 'W', 'A') else 1
+               for c in str(s))
+
+
+def _star_pad(s, width):
+    """s 를 표시 폭 width 로 좌측정렬 패딩. 값이 폭을 넘으면 최소 1칸 간격 유지."""
+    s = str(s)
+    return s + ' ' * max(1, width - _star_visual_width(s))
+
+
+def _format_star_line(bracket, v1, v2, v3):
+    """별표 라인을 고정폭 칼럼으로 조립.
+
+    bracket: '[N]' 또는 '' (훼손 행은 빈칸 → [N] 칼럼만큼 공백)
+    v1/v2/v3: 첫째/둘째/셋째 수량 칼럼 (해외·훼손 행은 v1 에 '[해외] N' 등 태그 포함)
+    """
+    return ("★★★ "
+            + _star_pad(bracket, _STAR_BRACKET_W)
+            + _star_pad(v1, _STAR_VALUE_W)
+            + _star_pad(v2, _STAR_VALUE_W)
+            + _star_pad(v3, _STAR_VALUE_W)
+            + "★★★")
+
+
 def process_data(headers, rows, mapping, stock, location_map=None, package_map=None, special_map=None):
     id_col = headers.index('아이디')
     qty_col = headers.index('수량')
@@ -592,8 +629,8 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
             total_nho = (total_normal_qty.get(code, 0)
                          + total_happo_qty.get(code, 0)
                          + total_overseas_qty.get(code, 0)) if code else 0
-            # 훼손 행은 [N] 자리를 같은 길이 공백으로 대체 (정렬 유지)
-            total_blank = ' ' * len(f"[{total_nho}]")
+            # 훼손 행의 [N] 칼럼은 _format_star_line 에 빈 bracket('')을 넘겨
+            # 고정폭만큼 공백 처리 (v1.5.1 이전 total_blank 방식 대체)
 
             if code and row['overseas'] and code not in seen_overseas:
                 # 해외배송: 별개 제품 취급, 해외수량  0  잔여재고
@@ -606,7 +643,7 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                 # 잔여재고: 훼손 제외 (훼손은 재고 차감 안 함)
                 remaining = avail - (tn + th + total_overseas_qty.get(code, 0))
                 original = row['values'][name_col] or ''
-                new_values[name_col] = f"{original}\n★★★ [{total_nho}]            [해외] {o}      0      {remaining}      ★★★"
+                new_values[name_col] = f"{original}\n" + _format_star_line(f"[{total_nho}]", f"[해외] {o}", "0", remaining)
                 seen_overseas.add(code)
             elif code and row['damaged'] and code not in seen_damaged:
                 # 훼손: 별개 제품 취급, 훼손수량  0  잔여재고
@@ -618,7 +655,7 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                 # 잔여재고: 훼손 제외 (훼손은 재고 차감 안 함)
                 remaining = avail - (tn + th + total_overseas_qty.get(code, 0))
                 original = row['values'][name_col] or ''
-                new_values[name_col] = f"{original}\n★★★ {total_blank}            [훼손] {d}      0      {remaining}      ★★★"
+                new_values[name_col] = f"{original}\n" + _format_star_line("", f"[훼손] {d}", "0", remaining)
                 seen_damaged.add(code)
             elif code and not row['overseas'] and not row['damaged']:
                 # v1.4.5: 전체 회사 합산 일반/합포수량 (통합 파일 별표 라인 일관성)
@@ -635,17 +672,17 @@ def process_data(headers, rows, mapping, stock, location_map=None, package_map=N
                     seen_happo.add(code)
                     if n == 0:
                         # 합포만 있는 경우: 0  합포수량  잔여재고 (합포 행에 표시)
-                        new_values[name_col] = f"{original}\n★★★ [{total_nho}]            0      {h}      {remaining}      ★★★"
+                        new_values[name_col] = f"{original}\n" + _format_star_line(f"[{total_nho}]", "0", h, remaining)
                         seen_normal.add(code)
                     # 일반도 있는 경우: 합포 행에는 표기 안 함 (일반 행에서 표시)
                 elif not row['happo'] and code not in seen_normal:
                     seen_normal.add(code)
                     if h == 0:
                         # 일반만 있는 경우: 일반수량  0  잔여재고
-                        new_values[name_col] = f"{original}\n★★★ [{total_nho}]            {n}      0      {remaining}      ★★★"
+                        new_values[name_col] = f"{original}\n" + _format_star_line(f"[{total_nho}]", n, "0", remaining)
                     else:
                         # 일반+합포 있는 경우: (일반+합포)  합포수량  잔여재고 (일반 행에만 표시)
-                        new_values[name_col] = f"{original}\n★★★ [{total_nho}]            {n + h}      {h}      {remaining}      ★★★"
+                        new_values[name_col] = f"{original}\n" + _format_star_line(f"[{total_nho}]", n + h, h, remaining)
 
             # v1.2.0: 별표 라인 width 추적 (포장 정보 정렬용)
             import unicodedata as _ud
