@@ -873,8 +873,8 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         super().__init__()
         current_ver = get_current_version()
         self.title(f'발주서 처리 프로그램 v{current_ver}')
-        self.geometry('720x600')
-        self.resizable(False, False)
+        self.geometry('1050x620')
+        self.resizable(False, True)
         self.configure(bg='#f5f5f5')
 
         self.order_file = tk.StringVar()
@@ -1001,8 +1001,11 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         widget.dnd_bind('<<Drop>>', on_drop)
 
     def clear(self):
+        if hasattr(self, '_company_panel_open') and self._company_panel_open:
+            self._save_company_panel()
         for w in self.winfo_children():
             w.destroy()
+        self.geometry('1050x620')
 
     def make_header(self, step, title):
         f = tk.Frame(self, bg='#2c3e50', pady=12)
@@ -1083,6 +1086,25 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             tk.Button(row_f, text='찾아보기', command=cmd,
                       bg='#3498db', fg='white', font=('맑은 고딕', 10),
                       padx=12, relief='flat', cursor='hand2').grid(row=0, column=1, padx=(6, 0))
+
+        # ⑤ 송화인 정보 (접이식 패널)
+        self._company_panel_open = getattr(self, '_company_panel_open', False)
+        toggle_frame = tk.Frame(frame, bg='#f5f5f5')
+        toggle_frame.grid(row=10, column=0, sticky='ew', pady=(12, 0))
+        self._company_toggle_btn = tk.Button(
+            toggle_frame,
+            text=('▼  송화인 정보 접기' if self._company_panel_open else '▶  송화인 정보 편집'),
+            command=self._toggle_company_panel,
+            bg='#f39c12', fg='white', font=('맑은 고딕', 10, 'bold'),
+            padx=12, pady=4, relief='flat', cursor='hand2')
+        self._company_toggle_btn.pack(side='left')
+        tk.Label(toggle_frame, text='통합 파일 R~V 컬럼(송화인)에 자동 입력',
+                 font=('맑은 고딕', 9), bg='#f5f5f5', fg='#888').pack(side='left', padx=(10, 0))
+
+        self._company_container = tk.Frame(frame, bg='#f5f5f5')
+        self._company_container.grid(row=11, column=0, sticky='ew', pady=(4, 0))
+        if self._company_panel_open:
+            self._build_company_panel()
 
         btn_frame = tk.Frame(self, bg='#f5f5f5', pady=15)
         btn_frame.pack(fill='x', padx=35)
@@ -1591,6 +1613,95 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         tk.Button(btn_frame, text='실행  ▶', command=self.show_step4,
                   bg='#e74c3c', fg='white', font=('맑은 고딕', 12, 'bold'),
                   padx=22, pady=9, relief='flat', cursor='hand2').pack(side='right')
+
+    def _toggle_company_panel(self):
+        self._company_panel_open = not self._company_panel_open
+        if self._company_panel_open:
+            self._company_toggle_btn.config(text='▼  송화인 정보 접기')
+            self._build_company_panel()
+            self.geometry('1050x920')
+        else:
+            self._save_company_panel()
+            for w in self._company_container.winfo_children():
+                w.destroy()
+            self._company_toggle_btn.config(text='▶  송화인 정보 편집')
+            self._company_entries = []
+            self.geometry('1050x620')
+
+    def _build_company_panel(self):
+        parent = self._company_container
+        for w in parent.winfo_children():
+            w.destroy()
+        self._company_entries = []
+
+        grid = tk.Frame(parent, bg='#f5f5f5')
+        grid.pack(fill='x')
+        grid.columnconfigure(2, weight=3)
+        grid.columnconfigure(3, weight=2)
+        self._company_grid = grid
+
+        for col, (text, w) in enumerate([('회사명', 13), ('우편번호', 7), ('주소1', 0), ('주소2', 0), ('전화번호', 14)]):
+            tk.Label(grid, text=text, font=('맑은 고딕', 9, 'bold'),
+                     bg='#34495e', fg='white', width=w, anchor='w',
+                     padx=4, pady=4).grid(row=0, column=col, sticky='ew')
+        tk.Label(grid, text='', bg='#34495e', width=2).grid(row=0, column=5, sticky='ew')
+
+        def add_row(name='', zip_='', addr1='', addr2='', phone=''):
+            r = len(self._company_entries) + 1
+            bg = '#ffffff' if r % 2 == 1 else '#eef5fb'
+            name_v = tk.StringVar(value=name)
+            zip_v = tk.StringVar(value=zip_)
+            addr1_v = tk.StringVar(value=addr1)
+            addr2_v = tk.StringVar(value=addr2)
+            phone_v = tk.StringVar(value=phone)
+            widgets = []
+            for col, (var, w) in enumerate([(name_v, 13), (zip_v, 7), (addr1_v, 0), (addr2_v, 0), (phone_v, 14)]):
+                e = tk.Entry(grid, textvariable=var, font=('맑은 고딕', 9),
+                             width=w, relief='solid', bd=1, bg=bg)
+                e.grid(row=r, column=col, sticky='ew', padx=(0, 2), pady=1, ipady=1)
+                widgets.append(e)
+            def remove(row_idx=r, wlist=widgets):
+                for ww in wlist:
+                    ww.destroy()
+                btn_ref[0].destroy()
+                self._company_entries[:] = [e for e in self._company_entries if e[5] != row_idx]
+            btn = tk.Button(grid, text='✕', command=remove,
+                      bg='#c0392b', fg='white', font=('맑은 고딕', 8, 'bold'),
+                      relief='flat', cursor='hand2', width=2)
+            btn.grid(row=r, column=5, padx=2, pady=1)
+            btn_ref = [btn]
+            self._company_entries.append((name_v, zip_v, addr1_v, addr2_v, phone_v, r))
+
+        for name, info in self.company_info.items():
+            add_row(name, info.get('zip', ''), info.get('addr1', ''),
+                    info.get('addr2', ''), info.get('phone', ''))
+
+        btn_f = tk.Frame(parent, bg='#f5f5f5', pady=6)
+        btn_f.pack(fill='x')
+        tk.Button(btn_f, text='+ 회사 추가', command=lambda: add_row(),
+                  bg='#e67e22', fg='white', font=('맑은 고딕', 9),
+                  padx=8, pady=2, relief='flat', cursor='hand2').pack(side='left')
+        tk.Button(btn_f, text='저장', command=self._save_company_panel,
+                  bg='#27ae60', fg='white', font=('맑은 고딕', 9, 'bold'),
+                  padx=12, pady=2, relief='flat', cursor='hand2').pack(side='right')
+
+    def _save_company_panel(self):
+        if not hasattr(self, '_company_entries') or not self._company_entries:
+            return
+        new_info = {}
+        for name_v, zip_v, addr1_v, addr2_v, phone_v, _ in self._company_entries:
+            name = name_v.get().strip()
+            if not name:
+                continue
+            new_info[name] = {
+                'zip': zip_v.get().strip(),
+                'addr1': addr1_v.get().strip(),
+                'addr2': addr2_v.get().strip(),
+                'phone': phone_v.get().strip(),
+            }
+        if new_info:
+            self.company_info = new_info
+            save_company_info(new_info)
 
     def _open_company_editor(self):
         """회사(송화인) 정보 편집 다이얼로그 (v1.4.1: 컬럼 폭/간격 확대)"""
